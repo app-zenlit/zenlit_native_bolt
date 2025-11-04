@@ -9,6 +9,7 @@ const uniqueSchemes = (schemes: Array<string | undefined>): string[] =>
 export default ({ config }: ConfigContext): ExpoConfig => {
   const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+  // Google OAuth configuration removed
 
   // Ensure redirectScheme is a string, even if config.scheme is an array
   const configSchemeString = Array.isArray(config.scheme)

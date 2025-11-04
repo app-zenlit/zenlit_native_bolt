@@ -7,7 +7,7 @@ export async function getConversationPartnerIds(): Promise<{ partnerIds: string[
     const { data: { user }, error: userError } = await supabase.auth.getUser();
 
     if (userError || !user) {
-      return { partnerIds: [], error: new Error('Not authenticated') };
+      return { partnerIds: [], error: null };
     }
 
     const { data: messagesData, error: messagesError } = await supabase
@@ -40,7 +40,7 @@ export async function getUserMessageThreads(): Promise<{ threads: MessageThread[
     const { data: { user }, error: userError } = await supabase.auth.getUser();
 
     if (userError || !user) {
-      return { threads: [], error: new Error('Not authenticated') };
+      return { threads: [], error: null };
     }
 
     const { data: messagesData, error: messagesError } = await supabase

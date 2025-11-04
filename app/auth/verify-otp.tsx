@@ -54,7 +54,7 @@ export default function VerifyOTPScreen() {
   };
 
   useEffect(() => {
-    startCooldown(60); // Start with 60 second cooldown
+    startCooldown(COOLDOWN_SECONDS); // Start with initial cooldown
   }, []);
 
   const handleChange = (text: string) => {
@@ -133,7 +133,7 @@ export default function VerifyOTPScreen() {
       }
 
       setStatus('We sent a new code to your inbox.');
-      startCooldown(60);
+      startCooldown(COOLDOWN_SECONDS);
       setResending(false);
     } catch (error) {
       setError('Failed to resend code. Please try again.');
@@ -156,7 +156,7 @@ export default function VerifyOTPScreen() {
           <View style={styles.topBar}>
             <Pressable
               accessibilityRole="button"
-              onPress={() => router.push('/auth/signup')}
+              onPress={() => router.replace('/auth')}
               style={styles.backButton}
             >
               <Feather name="arrow-left" size={20} color="#ffffff" />

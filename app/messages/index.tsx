@@ -38,8 +38,11 @@ const MessagesScreen: React.FC = () => {
     try {
       const { threads: threadsData, error } = await getUserMessageThreads();
       if (error) {
-        console.error('Error loading threads:', error);
+        if (error.message !== 'Not authenticated') {
+          console.error('Error loading threads:', error);
+        }
         setThreads([]);
+        setConversationPartnerIds([]);
         return;
       }
       setThreads(threadsData);
