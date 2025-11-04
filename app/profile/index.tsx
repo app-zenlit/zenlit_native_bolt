@@ -18,7 +18,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 
 import AppHeader from '../../src/components/AppHeader';
-import Navigation from '../../src/components/Navigation';
 import LogoutConfirmation from '../../src/components/LogoutConfirmation';
 import ProfileMenuSheet from '../../src/components/profile/ProfileMenuSheet';
 import Post from '../../src/components/Post';
@@ -196,7 +195,7 @@ const ProfileScreen: React.FC = () => {
           <ActivityIndicator size="large" color="#60a5fa" />
           <Text style={styles.loadingText}>Loading profile...</Text>
         </View>
-        <Navigation activePath="/profile" />
+        {/* Navigation is now rendered in the root layout */}
       </View>
     );
   }
@@ -209,7 +208,7 @@ const ProfileScreen: React.FC = () => {
         <View style={styles.loadingContainer}>
           <Text style={styles.errorText}>Failed to load profile</Text>
         </View>
-        <Navigation activePath="/profile" />
+        {/* Navigation is now rendered in the root layout */}
       </View>
     );
   }
@@ -239,7 +238,7 @@ const ProfileScreen: React.FC = () => {
           <View style={[styles.listHeader, { gap: headerGap, paddingTop: headerGap }]}>
             <View style={[styles.bannerWrapper, { marginBottom: bannerMargin }]}>
               <Image source={bannerSource} style={styles.bannerImage} resizeMode="cover" />
-              <View style={styles.bannerGradient} />
+              <View style={styles.bannerGradient} pointerEvents="none" />
               <View style={styles.bannerOverlayRow}>
                 <View style={styles.avatarWrapper}>
                   <Image source={{ uri: avatarUri }} style={styles.avatar} />
@@ -253,7 +252,7 @@ const ProfileScreen: React.FC = () => {
                       return (
                         <Pressable
                           key={id}
-                          style={styles.socialButton}
+                          style={({ pressed }) => [styles.socialButton, pressed ? styles.socialButtonPressed : null]}
                           accessibilityRole="button"
                           accessibilityLabel={meta.label}
                           onPress={() => {
@@ -263,6 +262,8 @@ const ProfileScreen: React.FC = () => {
                               router.push('/edit-profile');
                             }
                           }}
+                          android_ripple={{ color: 'rgba(255, 255, 255, 0.12)' }}
+                          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                           disabled={false}
                         >
                           <LinearGradient
@@ -289,7 +290,7 @@ const ProfileScreen: React.FC = () => {
                     return (
                       <Pressable
                         key={id}
-                        style={styles.socialButton}
+                        style={({ pressed }) => [styles.socialButton, pressed ? styles.socialButtonPressed : null]}
                         accessibilityRole="button"
                         accessibilityLabel={meta.label}
                         onPress={() => {
@@ -299,6 +300,8 @@ const ProfileScreen: React.FC = () => {
                             router.push('/edit-profile');
                           }
                         }}
+                        android_ripple={{ color: 'rgba(255, 255, 255, 0.12)' }}
+                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                         disabled={false}
                       >
                         <View style={badgeStyle}>
@@ -330,7 +333,7 @@ const ProfileScreen: React.FC = () => {
         }
         showsVerticalScrollIndicator={false}
       />
-      <Navigation activePath="/profile" />
+      {/* Navigation is now rendered in the root layout */}
     </View>
   );
 };
@@ -386,6 +389,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     justifyContent: 'space-between',
+    zIndex: 2,
+    elevation: 2,
   },
   avatarWrapper: {
     borderRadius: 8,
@@ -408,6 +413,9 @@ const styles = StyleSheet.create({
   },
   socialButton: {
     borderRadius: 8,
+  },
+  socialButtonPressed: {
+    opacity: 0.7,
   },
   socialDisabled: {
     opacity: 0.35,

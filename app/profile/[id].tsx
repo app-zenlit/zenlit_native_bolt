@@ -3,6 +3,7 @@ import {
   FlatList,
   Image,
   ImageSourcePropType,
+  Linking,
   Pressable,
   StatusBar,
   StyleProp,
@@ -17,7 +18,6 @@ import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { MessageSquare } from 'lucide-react-native';
 
-import Navigation from '../../src/components/Navigation';
 import Post from '../../src/components/Post';
 import {
   SOCIAL_PLATFORMS,
@@ -180,14 +180,14 @@ const UserProfileScreen: React.FC = () => {
     [profile, socialLinks],
   );
 
-  const activePath = `/profile/${requestedId}`;
+  // Navigation is now rendered in the root layout
 
   if (loading) {
     return (
       <View style={[styles.root, { justifyContent: 'center', alignItems: 'center' }]}>
         <StatusBar barStyle="light-content" backgroundColor="#000000" />
         <Text style={{ color: '#94a3b8', fontSize: 16 }}>Loading profile...</Text>
-        <Navigation activePath={activePath} />
+        {/* Navigation is now rendered in the root layout */}
       </View>
     );
   }
@@ -197,7 +197,7 @@ const UserProfileScreen: React.FC = () => {
       <View style={[styles.root, { justifyContent: 'center', alignItems: 'center' }]}>
         <StatusBar barStyle="light-content" backgroundColor="#000000" />
         <Text style={{ color: '#ef4444', fontSize: 16 }}>{error || 'Profile not found'}</Text>
-        <Navigation activePath={activePath} />
+        {/* Navigation is now rendered in the root layout */}
       </View>
     );
   }
@@ -218,7 +218,7 @@ const UserProfileScreen: React.FC = () => {
           <View style={[styles.listHeader, { gap: headerGap, paddingTop: headerGap }]}> 
             <View style={[styles.bannerWrapper, { marginBottom: bannerMargin }]}>
               <Image source={bannerSource} style={styles.bannerImage} />
-              <View style={styles.bannerGradient} />
+              <View style={styles.bannerGradient} pointerEvents="none" />
               {/* Overlaid back + message buttons */}
               <Pressable
                 onPress={() => router.back()}
@@ -256,10 +256,19 @@ const UserProfileScreen: React.FC = () => {
                           key={id}
                           onPress={() => {
                             if (disabled || !url) return;
-                            console.log('Open social link', id, url);
+                          const finalUrl = ensureSocialUrl(id as SocialPlatformId, url);
+                          if (!finalUrl) return;
+                          Linking.openURL(finalUrl).catch(() => {
+                            // no-op; in development builds some schemes may fail
+                          });
                           }}
                           disabled={disabled}
-                          style={styles.socialButton}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          android_ripple={{ color: 'rgba(255,255,255,0.18)', borderless: true }}
+                          style={({ pressed }) => [
+                            styles.socialButton,
+                            pressed ? styles.socialButtonPressed : null,
+                          ]}
                           accessibilityRole="button"
                           accessibilityLabel={meta.label}
                         >
@@ -289,10 +298,19 @@ const UserProfileScreen: React.FC = () => {
                         key={id}
                         onPress={() => {
                           if (disabled || !url) return;
-                          console.log('Open social link', id, url);
+                          const finalUrl = ensureSocialUrl(id as SocialPlatformId, url);
+                          if (!finalUrl) return;
+                          Linking.openURL(finalUrl).catch(() => {
+                            // no-op; in development builds some schemes may fail
+                          });
                         }}
                         disabled={disabled}
-                        style={styles.socialButton}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        android_ripple={{ color: 'rgba(255,255,255,0.18)', borderless: true }}
+                        style={({ pressed }) => [
+                          styles.socialButton,
+                          pressed ? styles.socialButtonPressed : null,
+                        ]}
                         accessibilityRole="button"
                         accessibilityLabel={meta.label}
                       >
@@ -324,7 +342,7 @@ const UserProfileScreen: React.FC = () => {
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
       />
-      <Navigation activePath={activePath} />
+      {/* Navigation is now rendered in the root layout */}
     </View>
   );
 };
@@ -386,6 +404,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     justifyContent: 'space-between',
+    zIndex: 10,
+    elevation: 10,
   },
   avatarWrapper: {
     borderRadius: 8,
@@ -409,6 +429,9 @@ const styles = StyleSheet.create({
   },
   socialButton: {
     borderRadius: 8,
+  },
+  socialButtonPressed: {
+    opacity: 0.9,
   },
   socialBadge: {
     width: 32,

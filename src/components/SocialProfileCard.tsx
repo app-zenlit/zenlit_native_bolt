@@ -113,10 +113,7 @@ export const SocialProfileCard: React.FC<SocialProfileCardProps> = ({
 
   const handleLinkPress = async (url: string) => {
     try {
-      const supported = await Linking.canOpenURL(url);
-      if (supported) {
-        await Linking.openURL(url);
-      }
+      await Linking.openURL(url);
     } catch (error) {
       console.warn('Unable to open url', error);
     }
@@ -157,7 +154,9 @@ export const SocialProfileCard: React.FC<SocialProfileCardProps> = ({
               <Pressable
                 key={id}
                 onPress={() => handleLinkPress(url)}
-                style={styles.socialButton}
+                style={({ pressed }) => [styles.socialButton, pressed ? styles.socialButtonPressed : null]}
+                android_ripple={{ color: 'rgba(255, 255, 255, 0.12)' }}
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                 accessibilityRole="button"
                 accessibilityLabel={meta.label}
               >
@@ -271,6 +270,9 @@ const styles = StyleSheet.create({
   },
   socialButton: {
     marginRight: 10,
+  },
+  socialButtonPressed: {
+    opacity: 0.7,
   },
   socialBadge: {
     width: 32,

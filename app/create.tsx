@@ -3,7 +3,6 @@ import { Alert, StatusBar, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 
 import { AppHeader } from '../src/components/AppHeader';
-import Navigation from '../src/components/Navigation';
 import { PostComposer, PostComposerSharePayload } from '../src/components/PostComposer';
 import SuccessPopup from '../src/components/SuccessPopup';
 import { theme } from '../src/styles/theme';
@@ -100,7 +99,6 @@ const CreateScreen: React.FC = () => {
       <View style={styles.root}>
         <StatusBar barStyle="light-content" backgroundColor="#000000" />
         <AppHeader title="Create Post" />
-        <Navigation activePath="/create" />
       </View>
     );
   }
@@ -124,7 +122,7 @@ const CreateScreen: React.FC = () => {
         }}
       />
 
-      <Navigation activePath="/create" />
+      {/* Navigation is now rendered in the root layout */}
     </View>
   );
 };

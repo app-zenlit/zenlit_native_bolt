@@ -4,7 +4,6 @@ import { useRouter } from 'expo-router';
 
 import AppHeader from '../../src/components/AppHeader';
 import ChatList from '../../src/components/messaging/ChatList';
-import Navigation from '../../src/components/Navigation';
 import { getUserMessageThreads, getConversationPartnerIds, type MessageThread } from '../../src/services';
 import { useVisibility } from '../../src/contexts/VisibilityContext';
 import { supabase } from '../../src/lib/supabase';
@@ -177,7 +176,7 @@ const MessagesScreen: React.FC = () => {
           />
         </View>
       )}
-      <Navigation />
+      {/* Navigation is now rendered in the root layout */}
     </View>
   );
 };

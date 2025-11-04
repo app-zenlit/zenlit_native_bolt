@@ -4,7 +4,6 @@ import { useRouter } from 'expo-router';
 
 import AppHeader from '../src/components/AppHeader';
 import FeedbackForm from '../src/components/feedback/FeedbackForm';
-import Navigation from '../src/components/Navigation';
 
 const FeedbackScreen: React.FC = () => {
   const router = useRouter();
@@ -24,7 +23,7 @@ const FeedbackScreen: React.FC = () => {
         <FeedbackForm />
       </ScrollView>
 
-      <Navigation activePath="/feedback" />
+      {/* Navigation is now rendered in the root layout */}
     </View>
   );
 };

@@ -4,7 +4,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 import AppHeader from '../src/components/AppHeader';
 import FeedList from '../src/components/FeedList';
-import Navigation from '../src/components/Navigation';
 import { theme } from '../src/styles/theme';
 
 const FeedScreen: React.FC = () => {
@@ -27,7 +26,7 @@ const FeedScreen: React.FC = () => {
       <View style={styles.content}>
         <FeedList refreshSignal={refreshSignal} />
       </View>
-      <Navigation activePath="/feed" />
+      {/* Navigation is now rendered in the root layout */}
     </View>
   );
 };

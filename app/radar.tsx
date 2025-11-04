@@ -11,7 +11,6 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppHeader } from '../src/components/AppHeader';
-import Navigation from '../src/components/Navigation';
 import { SocialProfileCard } from '../src/components/SocialProfileCard';
 import VisibilitySheet from '../src/components/VisibilitySheet';
 import { useVisibility } from '../src/contexts/VisibilityContext';
@@ -237,7 +236,7 @@ const RadarScreen: React.FC = () => {
       />
       )}
 
-      <Navigation activePath="/radar" />
+      {/* Navigation is now rendered in the root layout */}
 
       <VisibilitySheet
         visible={isSheetVisible}
