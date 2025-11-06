@@ -5,6 +5,8 @@ import { Stack, usePathname } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Platform, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { useFonts } from 'expo-font';
+import { Inter_500Medium } from '@expo-google-fonts/inter';
 
 import { VisibilityProvider } from '../src/contexts/VisibilityContext';
 import { MessagingProvider } from '../src/contexts/MessagingContext';
@@ -16,6 +18,7 @@ import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 const RootLayout: React.FC = () => {
   const pathname = usePathname();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [fontsLoaded] = useFonts({ Inter_500Medium });
 
   useEffect(() => {
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
@@ -55,6 +58,11 @@ const RootLayout: React.FC = () => {
     };
   }, []);
 
+  if (!fontsLoaded) {
+    // Avoid rendering before fonts load to ensure consistent typography
+    return null;
+  }
+
   return (
     <SafeAreaProvider>
       <VisibilityProvider>
@@ -66,10 +74,14 @@ const RootLayout: React.FC = () => {
                 headerShown: false,
                 contentStyle: { backgroundColor: theme.colors.background },
               }}
-            />
+            >
+              {/** Ensure Get Started (index) is fully immersive: no header */}
+              <Stack.Screen name="index" options={{ headerShown: false }} />
+            </Stack>
             {(() => {
               const isPreauthRoute = pathname?.startsWith('/auth') || pathname?.startsWith('/onboarding');
-              const shouldShowNav = isAuthenticated && !isPreauthRoute;
+              const isGetStartedRoute = pathname === '/';
+              const shouldShowNav = isAuthenticated && !isPreauthRoute && !isGetStartedRoute;
               return shouldShowNav ? <Navigation /> : null;
             })()}
           </View>

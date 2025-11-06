@@ -228,7 +228,8 @@ const styles = StyleSheet.create({
   },
   brandTitle: {
     fontSize: 40,
-    fontWeight: '700',
+    // Use Inter Medium for platform-consistent medium weight
+    fontFamily: 'Inter_500Medium',
     letterSpacing: -0.8,
     textAlign: 'center',
   },

@@ -157,7 +157,8 @@ export async function getUserMessageThreads(): Promise<{ threads: MessageThread[
 
 export async function getMessagesBetweenUsers(
   otherUserId: string,
-  limit = 100
+  limit = 100,
+  before?: string
 ): Promise<{ messages: Message[]; error: Error | null }> {
   try {
     const { data: { user }, error: userError } = await supabase.auth.getUser();
@@ -166,11 +167,19 @@ export async function getMessagesBetweenUsers(
       return { messages: [], error: new Error('Not authenticated') };
     }
 
-    const { data, error } = await supabase
+    let query = supabase
       .from('messages')
       .select('*')
-      .or(`and(sender_id.eq.${user.id},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${user.id})`)
-      .order('created_at', { ascending: true })
+      .or(
+        `and(sender_id.eq.${user.id},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${user.id})`
+      );
+
+    if (before) {
+      query = query.lt('created_at', before);
+    }
+
+    const { data, error } = await query
+      .order('created_at', { ascending: false })
       .limit(limit);
 
     if (error) {

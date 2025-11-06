@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Text,
   View,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useLocalSearchParams } from 'expo-router';
@@ -149,40 +150,20 @@ const ChatDetailScreen: React.FC = () => {
     setIsAnonymous(!isNearby);
   }, [otherUserId]);
 
-  useEffect(() => {
-    const loadChat = async () => {
-      if (!otherUserId || !currentUserId) return;
-
-      setLoading(true);
-
-      const { profile, socialLinks: social, error: profileError } = await getProfileById(otherUserId);
-
-      if (profileError || !profile) {
-        console.error('Error loading profile:', profileError);
-      } else {
-        setOtherUser(profile);
-        setSocialLinks(social);
-      }
-
-      const { messages: messagesData, error: messagesError } = await getMessagesBetweenUsers(otherUserId);
-
-      if (messagesError) {
-        console.error('Error loading messages:', messagesError);
-      } else {
-        const chatMessages = sortMessagesAsc(messagesData.map(mapServerMessage));
-        setMessages(chatMessages);
-      }
-
-      await checkAnonymity();
-
-      setLoading(false);
-    };
-
-    loadChat();
-  }, [otherUserId, currentUserId, mapServerMessage, checkAnonymity]);
-
   const listRef = useRef<FlatList<RenderItem>>(null);
 
+  const BATCH_SIZE = 50;
+  const [isFetchingMore, setIsFetchingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+
+  // Track scroll position and content size to keep anchor stable on prepend
+  const scrollYRef = useRef(0);
+  const contentHeightRef = useRef(0);
+  const preAppendHeightRef = useRef(0);
+  const preAppendOffsetRef = useRef(0);
+  const prependingRef = useRef(false);
+
+  // Initial auto-scroll to end when switching conversations
   useEffect(() => {
     const timeout = setTimeout(() => {
       listRef.current?.scrollToEnd({ animated: false });
@@ -190,7 +171,12 @@ const ChatDetailScreen: React.FC = () => {
     return () => clearTimeout(timeout);
   }, [otherUserId]);
 
+
   useEffect(() => {
+    if (prependingRef.current) {
+      // Skip auto-scroll when older messages are being prepended
+      return;
+    }
     const timeout = setTimeout(() => {
       listRef.current?.scrollToEnd({ animated: true });
     }, 60);
@@ -297,6 +283,66 @@ const ChatDetailScreen: React.FC = () => {
       supabase.removeChannel(channel);
     };
   }, [otherUserId, currentUserId, mapServerMessage, checkAnonymity]);
+
+  // Initial load: latest batch
+  useEffect(() => {
+    const loadChat = async () => {
+      if (!otherUserId || !currentUserId) return;
+
+      setLoading(true);
+
+      const { profile, socialLinks: social, error: profileError } = await getProfileById(otherUserId);
+
+      if (profileError || !profile) {
+        console.error('Error loading profile:', profileError);
+      } else {
+        setOtherUser(profile);
+        setSocialLinks(social);
+      }
+
+      const { messages: messagesData, error: messagesError } = await getMessagesBetweenUsers(otherUserId, BATCH_SIZE);
+
+      if (messagesError) {
+        console.error('Error loading messages:', messagesError);
+      } else {
+        const chatMessages = sortMessagesAsc(messagesData.map(mapServerMessage));
+        setMessages(chatMessages);
+        setHasMore(messagesData.length === BATCH_SIZE);
+      }
+
+      await checkAnonymity();
+
+      setLoading(false);
+    };
+
+    loadChat();
+  }, [otherUserId, currentUserId, mapServerMessage, checkAnonymity]);
+
+  const loadOlder = useCallback(async () => {
+    if (isFetchingMore || !hasMore || !otherUserId || messages.length === 0) return;
+
+    const oldest = messages[0]?.sentAt;
+    if (!oldest) return;
+
+    setIsFetchingMore(true);
+    preAppendHeightRef.current = contentHeightRef.current;
+    preAppendOffsetRef.current = scrollYRef.current;
+    prependingRef.current = true;
+
+    const { messages: olderData, error } = await getMessagesBetweenUsers(otherUserId, BATCH_SIZE, oldest);
+
+    if (error) {
+      console.error('Error loading older messages:', error);
+    } else if (olderData.length > 0) {
+      const olderAsc = sortMessagesAsc(olderData.map(mapServerMessage));
+      setMessages((prev) => [...olderAsc, ...prev]);
+      setHasMore(olderData.length === BATCH_SIZE);
+    } else {
+      setHasMore(false);
+    }
+
+    setIsFetchingMore(false);
+  }, [isFetchingMore, hasMore, otherUserId, messages, mapServerMessage]);
 
   const data = useMemo<RenderItem[]>(() => {
     const entries: RenderItem[] = [];
@@ -459,6 +505,32 @@ const ChatDetailScreen: React.FC = () => {
             contentContainerStyle={styles.listContent}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
+            onScroll={(e) => {
+              const y = e.nativeEvent.contentOffset.y;
+              scrollYRef.current = y;
+              const TOP_THRESHOLD = 24;
+              if (y <= TOP_THRESHOLD) {
+                loadOlder();
+              }
+            }}
+            scrollEventThrottle={16}
+            onContentSizeChange={(w, h) => {
+              if (prependingRef.current) {
+                const delta = h - preAppendHeightRef.current;
+                if (delta > 0) {
+                  listRef.current?.scrollToOffset({ offset: preAppendOffsetRef.current + delta, animated: false });
+                }
+                prependingRef.current = false;
+              }
+              contentHeightRef.current = h;
+            }}
+            ListHeaderComponent={
+              isFetchingMore ? (
+                <View style={{ paddingVertical: 8, alignItems: 'center' }}>
+                  <ActivityIndicator size="small" color={theme.colors.muted} />
+                </View>
+              ) : null
+            }
           />
           <SafeAreaView edges={['bottom']} style={styles.composerWrapper}>
             <Composer onSend={handleSend} />

@@ -31,7 +31,7 @@ export const GradientTitle: React.FC<GradientTitleProps> = ({
 
   if (Platform.OS === 'web') {
     const webGradientStyle: any = {
-      backgroundImage: `linear-gradient(90deg, ${theme.gradients.header.from}, ${theme.gradients.header.to})`,
+      backgroundImage: 'linear-gradient(90deg, #2563eb, #7e22ce)',
       WebkitBackgroundClip: 'text',
       backgroundClip: 'text',
       color: 'transparent',
@@ -62,7 +62,7 @@ export const GradientTitle: React.FC<GradientTitleProps> = ({
             ellipsizeMode={ellipsizeMode}
             accessible={false}
             importantForAccessibility="no"
-            style={effectiveStyle}
+            style={[effectiveStyle, styles.maskText]}
           >
             {text}
           </Text>
@@ -70,11 +70,12 @@ export const GradientTitle: React.FC<GradientTitleProps> = ({
       }
     >
       <LinearGradient
-        colors={theme.gradients.header.colors}
+        colors={["#2563eb", "#7e22ce"]}
         start={{ x: 0, y: 0.5 }}
         end={{ x: 1, y: 0.5 }}
         style={styles.gradientFill}
       >
+        {/** Use an invisible sizing text to ensure gradient matches mask size without drawing behind it */}
         <Text
           accessible={false}
           importantForAccessibility="no"
@@ -97,16 +98,21 @@ const styles = StyleSheet.create({
   },
   maskContainer: {
     flexShrink: 1,
-    alignSelf: 'flex-start',
   },
   maskWrapper: {
     backgroundColor: 'transparent',
   },
   gradientFill: {
-    alignSelf: 'flex-start',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   hiddenText: {
-    color: '#ffffff',
+    color: 'transparent',
+    opacity: 0,
+  },
+  maskText: {
+    // Ensure the mask is fully opaque to reveal the gradient underneath
+    color: '#000000',
   },
 });
 
