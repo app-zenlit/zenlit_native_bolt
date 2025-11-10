@@ -133,16 +133,6 @@ const ChatDetailScreen: React.FC = () => {
     }, [otherUserId, markThreadDelivered, markThreadRead, setActiveConversation])
   );
 
-  useEffect(() => {
-    const loadCurrentUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        setCurrentUserId(user.id);
-      }
-    };
-    loadCurrentUser();
-  }, []);
-
   const checkAnonymity = useCallback(async () => {
     if (!otherUserId) return;
 
@@ -184,105 +174,138 @@ const ChatDetailScreen: React.FC = () => {
   }, [messages.length]);
 
   useEffect(() => {
-    if (!otherUserId || !currentUserId) {
+    if (!otherUserId) {
       return;
     }
 
-    const channel = supabase
-      .channel(`chat-user-${otherUserId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'messages',
-          filter: `sender_id=eq.${otherUserId},receiver_id=eq.${currentUserId}`
-        },
-        (payload: RealtimePostgresChangesPayload<Message>) => {
-          const raw = payload.new;
-          if (!isServerMessage(raw)) {
-            return;
-          }
-          const newMessage = raw;
+    let channelCleanup: (() => void) | null = null;
 
-          setMessages((prev) => {
-            const mapped = mapServerMessage(newMessage);
-            const existingIndex = prev.findIndex((m) => m.id === mapped.id);
-            if (existingIndex >= 0) {
-              const next = [...prev];
-              next[existingIndex] = mapped;
-              return sortMessagesAsc(next);
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const userId = user.id;
+      setCurrentUserId(userId);
+
+      const channel = supabase
+        .channel(`chat-user-${otherUserId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'messages',
+            filter: `sender_id=eq.${otherUserId},receiver_id=eq.${userId}`
+          },
+          (payload: RealtimePostgresChangesPayload<Message>) => {
+            const raw = payload.new;
+            if (!isServerMessage(raw)) {
+              return;
             }
-            return sortMessagesAsc([...prev, mapped]);
-          });
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'messages',
-          filter: `sender_id=eq.${currentUserId},receiver_id=eq.${otherUserId}`
-        },
-        (payload: RealtimePostgresChangesPayload<Message>) => {
-          const raw = payload.new;
-          if (!isServerMessage(raw)) {
-            return;
-          }
-          const newMessage = raw;
+            const newMessage = raw;
 
-          setMessages((prev) => {
-            const mapped = mapServerMessage(newMessage);
-            const existingIndex = prev.findIndex((m) => m.id === mapped.id);
-            if (existingIndex >= 0) {
-              const next = [...prev];
-              next[existingIndex] = mapped;
-              return sortMessagesAsc(next);
-            }
-            return sortMessagesAsc([...prev, mapped]);
-          });
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'messages' },
-        (payload: RealtimePostgresChangesPayload<Message>) => {
-          const raw = payload.new;
-          if (!isServerMessage(raw)) {
-            return;
-          }
-          const updatedMessage = raw;
-
-          if (
-            (updatedMessage.sender_id === currentUserId && updatedMessage.receiver_id === otherUserId) ||
-            (updatedMessage.sender_id === otherUserId && updatedMessage.receiver_id === currentUserId)
-          ) {
             setMessages((prev) => {
-              const index = prev.findIndex((m) => m.id === updatedMessage.id);
-              if (index === -1) {
-                return prev;
+              const mapped = mapServerMessage(newMessage);
+              const existingIndex = prev.findIndex((m) => m.id === mapped.id);
+              if (existingIndex >= 0) {
+                const next = [...prev];
+                next[existingIndex] = mapped;
+                return sortMessagesAsc(next);
               }
-              const next = [...prev];
-              next[index] = mapServerMessage(updatedMessage);
-              return sortMessagesAsc(next);
+              return sortMessagesAsc([...prev, mapped]);
             });
           }
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'locations' },
-        (payload: RealtimePostgresChangesPayload<any>) => {
-          checkAnonymity();
-        }
-      )
-      .subscribe();
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'messages',
+            filter: `sender_id=eq.${userId},receiver_id=eq.${otherUserId}`
+          },
+          (payload: RealtimePostgresChangesPayload<Message>) => {
+            const raw = payload.new;
+            if (!isServerMessage(raw)) {
+              return;
+            }
+            const newMessage = raw;
+
+            setMessages((prev) => {
+              const mapped = mapServerMessage(newMessage);
+              const existingIndex = prev.findIndex((m) => m.id === mapped.id);
+              if (existingIndex >= 0) {
+                const next = [...prev];
+                next[existingIndex] = mapped;
+                return sortMessagesAsc(next);
+              }
+              return sortMessagesAsc([...prev, mapped]);
+            });
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: 'messages' },
+          (payload: RealtimePostgresChangesPayload<Message>) => {
+            const raw = payload.new;
+            if (!isServerMessage(raw)) {
+              return;
+            }
+            const updatedMessage = raw;
+
+            if (
+              (updatedMessage.sender_id === userId && updatedMessage.receiver_id === otherUserId) ||
+              (updatedMessage.sender_id === otherUserId && updatedMessage.receiver_id === userId)
+            ) {
+              setMessages((prev) => {
+                const index = prev.findIndex((m) => m.id === updatedMessage.id);
+                if (index === -1) {
+                  return prev;
+                }
+                const next = [...prev];
+                next[index] = mapServerMessage(updatedMessage);
+                return sortMessagesAsc(next);
+              });
+            }
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'locations',
+            filter: `id=eq.${otherUserId}`
+          },
+          (payload: RealtimePostgresChangesPayload<any>) => {
+            checkAnonymity();
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'locations',
+            filter: `id=eq.${userId}`
+          },
+          (payload: RealtimePostgresChangesPayload<any>) => {
+            checkAnonymity();
+          }
+        )
+        .subscribe();
+
+      channelCleanup = () => {
+        supabase.removeChannel(channel);
+      };
+    })();
 
     return () => {
-      supabase.removeChannel(channel);
+      if (channelCleanup) {
+        channelCleanup();
+      }
     };
-  }, [otherUserId, currentUserId, mapServerMessage, checkAnonymity]);
+  }, [otherUserId, mapServerMessage, checkAnonymity]);
 
   // Initial load: latest batch
   useEffect(() => {
@@ -463,7 +486,7 @@ const ChatDetailScreen: React.FC = () => {
     );
   }
 
-  const displayName = otherUser.display_name;
+  const displayName = isAnonymous ? 'Anonymous' : otherUser.display_name;
   const displayAvatar = isAnonymous ? undefined : (socialLinks?.profile_pic_url || FALLBACK_AVATAR);
 
   return (
@@ -533,7 +556,7 @@ const ChatDetailScreen: React.FC = () => {
             }
           />
           <SafeAreaView edges={['bottom']} style={styles.composerWrapper}>
-            <Composer onSend={handleSend} />
+            <Composer onSend={handleSend} disabled={isAnonymous} />
           </SafeAreaView>
         </View>
       </KeyboardAvoidingView>
