@@ -172,6 +172,8 @@ const ChatDetailScreen: React.FC = () => {
   const preAppendOffsetRef = useRef(0);
   const prependingRef = useRef(false);
   const isAtBottomRef = useRef(true);
+  const lastReadMessageIdRef = useRef<string | null>(null);
+  const hasMarkedReadRef = useRef(false);
 
   const mapServerMessage = useCallback(
     (msg: Message): ChatMsg => {
@@ -216,18 +218,18 @@ const ChatDetailScreen: React.FC = () => {
 
       console.log('[RT:Thread] Screen focused');
       setActiveConversation(otherUserId);
+      hasMarkedReadRef.current = false;
+
       markThreadDelivered(otherUserId).catch((error) => {
         console.error('[RT:Thread] Failed to mark messages delivered on focus', error);
-      });
-      markThreadRead(otherUserId).catch((error) => {
-        console.error('[RT:Thread] Failed to mark messages read on focus', error);
       });
 
       return () => {
         console.log('[RT:Thread] Screen blurred');
         setActiveConversation(null);
+        hasMarkedReadRef.current = false;
       };
-    }, [otherUserId, markThreadDelivered, markThreadRead, setActiveConversation])
+    }, [otherUserId, markThreadDelivered, setActiveConversation])
   );
 
   const checkAnonymity = useCallback(async () => {
@@ -257,7 +259,7 @@ const ChatDetailScreen: React.FC = () => {
 
       debounceTimerRef.current = setTimeout(() => {
         processBatchedEvents();
-      }, 50) as ReturnType<typeof setTimeout>;
+      }, 30) as ReturnType<typeof setTimeout>;
     },
     [processBatchedEvents]
   );
@@ -276,7 +278,7 @@ const ChatDetailScreen: React.FC = () => {
     if (isAtBottomRef.current && state.messages.length > 0) {
       const timeout = setTimeout(() => {
         listRef.current?.scrollToEnd({ animated: true });
-      }, 60);
+      }, 100);
       return () => clearTimeout(timeout);
     }
   }, [state.messages.length]);
@@ -305,10 +307,13 @@ const ChatDetailScreen: React.FC = () => {
             const mapped = mapServerMessage(raw);
             dispatch({ type: 'UPSERT_MESSAGE', message: mapped });
 
-            if (raw.sender_id === otherUserId) {
+            if (raw.sender_id === otherUserId && isAtBottomRef.current) {
+              console.log('[RT:Thread] New message from other user, marking as read (user at bottom)');
               markThreadRead(otherUserId).catch((err) =>
                 console.error('[RT:Thread] Failed to mark read', err)
               );
+              lastReadMessageIdRef.current = raw.id;
+              hasMarkedReadRef.current = true;
             }
           });
         },
@@ -363,6 +368,7 @@ const ChatDetailScreen: React.FC = () => {
                 const raw = payload.new;
                 if (!isServerMessage(raw)) return;
 
+                console.log('[RT:Thread] Message status updated');
                 queueEvent(() => {
                   const mapped = mapServerMessage(raw);
                   dispatch({ type: 'UPSERT_MESSAGE', message: mapped });
@@ -642,7 +648,16 @@ const ChatDetailScreen: React.FC = () => {
               const contentHeight = e.nativeEvent.contentSize.height;
 
               scrollYRef.current = y;
+              const wasAtBottom = isAtBottomRef.current;
               isAtBottomRef.current = y + height >= contentHeight - 20;
+
+              if (!wasAtBottom && isAtBottomRef.current && !hasMarkedReadRef.current && otherUserId) {
+                console.log('[RT:Thread] User scrolled to bottom, marking messages as read');
+                markThreadRead(otherUserId).catch((err) =>
+                  console.error('[RT:Thread] Failed to mark read on scroll', err)
+                );
+                hasMarkedReadRef.current = true;
+              }
 
               const TOP_THRESHOLD = 24;
               if (y <= TOP_THRESHOLD) {
