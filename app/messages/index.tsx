@@ -25,7 +25,8 @@ type ThreadsAction =
   | { type: 'UPSERT_THREAD'; thread: MessageThread }
   | { type: 'UPDATE_THREAD_MESSAGE'; otherUserId: string; message: Message }
   | { type: 'UPDATE_THREAD_ANONYMITY'; otherUserId: string; isAnonymous: boolean }
-  | { type: 'INITIAL_LOAD_COMPLETE' };
+  | { type: 'INITIAL_LOAD_COMPLETE' }
+  | { type: 'MERGE_NEW_THREADS'; threads: MessageThread[] };
 
 function threadsReducer(state: ThreadsState, action: ThreadsAction): ThreadsState {
   switch (action.type) {
@@ -69,7 +70,10 @@ function threadsReducer(state: ThreadsState, action: ThreadsAction): ThreadsStat
         (t) => t.other_user_id === action.otherUserId
       );
 
-      if (threadIndex === -1) return state;
+      if (threadIndex === -1) {
+        console.log('[RT:List] Message from new conversation partner, fetching thread data');
+        return state;
+      }
 
       const newThreads = [...state.threads];
       const thread = newThreads[threadIndex];
@@ -86,6 +90,22 @@ function threadsReducer(state: ThreadsState, action: ThreadsAction): ThreadsStat
       );
 
       return { ...state, threads: newThreads };
+    }
+
+    case 'MERGE_NEW_THREADS': {
+      const existingIds = new Set(state.threads.map((t) => t.other_user_id));
+      const newThreads = action.threads.filter((t) => !existingIds.has(t.other_user_id));
+
+      if (newThreads.length === 0) return state;
+
+      const combined = [...state.threads, ...newThreads];
+      combined.sort(
+        (a, b) =>
+          new Date(b.last_message.created_at).getTime() -
+          new Date(a.last_message.created_at).getTime()
+      );
+
+      return { ...state, threads: combined };
     }
 
     case 'UPDATE_THREAD_ANONYMITY': {
@@ -125,6 +145,7 @@ const MessagesScreen: React.FC = () => {
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const channelRef = useRef<any>(null);
   const locationChannelRef = useRef<any>(null);
+  const newConversationCheckRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     let mounted = true;
@@ -157,7 +178,7 @@ const MessagesScreen: React.FC = () => {
 
       debounceTimerRef.current = setTimeout(() => {
         processBatchedEvents();
-      }, 100) as ReturnType<typeof setTimeout>;
+      }, 50) as ReturnType<typeof setTimeout>;
     },
     [processBatchedEvents]
   );
@@ -189,7 +210,9 @@ const MessagesScreen: React.FC = () => {
         });
       } catch (error) {
         console.error('[RT:List] Exception loading threads:', error);
-        dispatch({ type: 'SET_LOADING', loading: false });
+        if (showSpinner) {
+          dispatch({ type: 'SET_LOADING', loading: false });
+        }
       }
     },
     [refreshUnread, state.initialLoadComplete]
@@ -203,10 +226,6 @@ const MessagesScreen: React.FC = () => {
   );
 
   useEffect(() => {
-    loadThreads(true);
-  }, [isVisible, locationPermissionDenied]);
-
-  useEffect(() => {
     if (!currentUserId) return;
 
     console.log('[RT:List] Setting up message realtime subscription');
@@ -218,13 +237,29 @@ const MessagesScreen: React.FC = () => {
       const isMyMessage = messageData.sender_id === currentUserId;
       const otherUserId = isMyMessage ? messageData.receiver_id : messageData.sender_id;
 
-      queueEvent(() => {
-        dispatch({
-          type: 'UPDATE_THREAD_MESSAGE',
-          otherUserId,
-          message: messageData,
+      const existingThread = state.threads.find((t) => t.other_user_id === otherUserId);
+
+      if (!existingThread && !newConversationCheckRef.current.has(otherUserId)) {
+        console.log('[RT:List] New conversation detected, fetching threads silently');
+        newConversationCheckRef.current.add(otherUserId);
+
+        setTimeout(async () => {
+          const { threads: freshThreads, error } = await getUserMessageThreads();
+          if (!error && freshThreads) {
+            dispatch({ type: 'MERGE_NEW_THREADS', threads: freshThreads });
+          }
+          newConversationCheckRef.current.delete(otherUserId);
+        }, 500);
+      } else {
+        console.log('[RT:List] New message event, updating thread silently');
+        queueEvent(() => {
+          dispatch({
+            type: 'UPDATE_THREAD_MESSAGE',
+            otherUserId,
+            message: messageData,
+          });
         });
-      });
+      }
     };
 
     channelRef.current = supabase
@@ -301,6 +336,7 @@ const MessagesScreen: React.FC = () => {
 
     const handleLocationUpdate = async (otherUserId: string) => {
       const { isNearby } = await isUserNearby(otherUserId);
+      console.log('[RT:List] Location update, updating anonymity silently');
       queueEvent(() => {
         dispatch({
           type: 'UPDATE_THREAD_ANONYMITY',
@@ -338,7 +374,7 @@ const MessagesScreen: React.FC = () => {
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextAppState) => {
       if (nextAppState === 'active') {
-        console.log('[RT:List] App became active, reloading threads');
+        console.log('[RT:List] App became active, reloading threads silently');
         loadThreads(false);
       }
     });
