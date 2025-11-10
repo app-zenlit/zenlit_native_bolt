@@ -61,7 +61,7 @@ export class RealtimeManager {
           event: 'INSERT',
           schema: 'public',
           table: 'messages',
-          filter: `sender_id=eq.${otherUserId},receiver_id=eq.${currentUserId}`,
+          filter: `sender_id=eq.${otherUserId}&receiver_id=eq.${currentUserId}`,
         },
         (payload: RealtimePostgresChangesPayload<any>) => {
           this.log('Received INSERT from other user');
@@ -74,7 +74,7 @@ export class RealtimeManager {
           event: 'INSERT',
           schema: 'public',
           table: 'messages',
-          filter: `sender_id=eq.${currentUserId},receiver_id=eq.${otherUserId}`,
+          filter: `sender_id=eq.${currentUserId}&receiver_id=eq.${otherUserId}`,
         },
         (payload: RealtimePostgresChangesPayload<any>) => {
           this.log('Received INSERT from current user');
