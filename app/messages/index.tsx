@@ -1,27 +1,130 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, ScrollView, StatusBar, StyleSheet, Text, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useReducer, useRef, useState } from 'react';
+import { ActivityIndicator, AppState, StatusBar, StyleSheet, Text, View } from 'react-native';
+import { useFocusEffect, useRouter } from 'expo-router';
 
 import AppHeader from '../../src/components/AppHeader';
 import ChatList from '../../src/components/messaging/ChatList';
-import { getUserMessageThreads, getConversationPartnerIds, type MessageThread } from '../../src/services';
+import { getUserMessageThreads, type MessageThread, type Message } from '../../src/services';
 import { useVisibility } from '../../src/contexts/VisibilityContext';
 import { supabase } from '../../src/lib/supabase';
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 import { useMessaging } from '../../src/contexts/MessagingContext';
+import { isUserNearby } from '../../src/services/locationDbService';
 
 const FALLBACK_AVATAR = 'https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_1280.png';
+
+type ThreadsState = {
+  threads: MessageThread[];
+  loading: boolean;
+  initialLoadComplete: boolean;
+};
+
+type ThreadsAction =
+  | { type: 'SET_LOADING'; loading: boolean }
+  | { type: 'SET_THREADS'; threads: MessageThread[] }
+  | { type: 'UPSERT_THREAD'; thread: MessageThread }
+  | { type: 'UPDATE_THREAD_MESSAGE'; otherUserId: string; message: Message }
+  | { type: 'UPDATE_THREAD_ANONYMITY'; otherUserId: string; isAnonymous: boolean }
+  | { type: 'INITIAL_LOAD_COMPLETE' };
+
+function threadsReducer(state: ThreadsState, action: ThreadsAction): ThreadsState {
+  switch (action.type) {
+    case 'SET_LOADING':
+      return { ...state, loading: action.loading };
+
+    case 'SET_THREADS':
+      return {
+        ...state,
+        threads: action.threads,
+        loading: false,
+      };
+
+    case 'INITIAL_LOAD_COMPLETE':
+      return { ...state, initialLoadComplete: true, loading: false };
+
+    case 'UPSERT_THREAD': {
+      const existingIndex = state.threads.findIndex(
+        (t) => t.other_user_id === action.thread.other_user_id
+      );
+
+      let newThreads: MessageThread[];
+      if (existingIndex >= 0) {
+        newThreads = [...state.threads];
+        newThreads[existingIndex] = action.thread;
+      } else {
+        newThreads = [action.thread, ...state.threads];
+      }
+
+      newThreads.sort(
+        (a, b) =>
+          new Date(b.last_message.created_at).getTime() -
+          new Date(a.last_message.created_at).getTime()
+      );
+
+      return { ...state, threads: newThreads };
+    }
+
+    case 'UPDATE_THREAD_MESSAGE': {
+      const threadIndex = state.threads.findIndex(
+        (t) => t.other_user_id === action.otherUserId
+      );
+
+      if (threadIndex === -1) return state;
+
+      const newThreads = [...state.threads];
+      const thread = newThreads[threadIndex];
+
+      newThreads[threadIndex] = {
+        ...thread,
+        last_message: action.message,
+      };
+
+      newThreads.sort(
+        (a, b) =>
+          new Date(b.last_message.created_at).getTime() -
+          new Date(a.last_message.created_at).getTime()
+      );
+
+      return { ...state, threads: newThreads };
+    }
+
+    case 'UPDATE_THREAD_ANONYMITY': {
+      const threadIndex = state.threads.findIndex(
+        (t) => t.other_user_id === action.otherUserId
+      );
+
+      if (threadIndex === -1) return state;
+
+      const newThreads = [...state.threads];
+      newThreads[threadIndex] = {
+        ...newThreads[threadIndex],
+        is_anonymous: action.isAnonymous,
+      };
+
+      return { ...state, threads: newThreads };
+    }
+
+    default:
+      return state;
+  }
+}
 
 const MessagesScreen: React.FC = () => {
   const router = useRouter();
   const { isVisible, locationPermissionDenied } = useVisibility();
   const { threadUnread, refreshUnread } = useMessaging();
 
-  const [loading, setLoading] = useState(true);
-  const [threads, setThreads] = useState<MessageThread[]>([]);
+  const [state, dispatch] = useReducer(threadsReducer, {
+    threads: [],
+    loading: true,
+    initialLoadComplete: false,
+  });
+
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [refreshSignal, setRefreshSignal] = useState(0);
-  const [conversationPartnerIds, setConversationPartnerIds] = useState<string[]>([]);
+  const eventQueueRef = useRef<Array<() => void>>([]);
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const channelRef = useRef<any>(null);
+  const locationChannelRef = useRef<any>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -29,93 +132,185 @@ const MessagesScreen: React.FC = () => {
       const { data } = await supabase.auth.getUser();
       if (mounted) setCurrentUserId(data.user?.id ?? null);
     })();
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, []);
 
-  const loadThreads = useCallback(async () => {
-    setLoading(true);
-    try {
-      const { threads: threadsData, error } = await getUserMessageThreads();
-      if (error) {
-        if (error.message !== 'Not authenticated') {
-          console.error('Error loading threads:', error);
-        }
-        setThreads([]);
-        setConversationPartnerIds([]);
-        return;
+  const processBatchedEvents = useCallback(() => {
+    if (eventQueueRef.current.length === 0) return;
+
+    console.log(`[RT:List] Processing ${eventQueueRef.current.length} batched events`);
+    const events = [...eventQueueRef.current];
+    eventQueueRef.current = [];
+
+    events.forEach((fn) => fn());
+  }, []);
+
+  const queueEvent = useCallback(
+    (fn: () => void) => {
+      eventQueueRef.current.push(fn);
+
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
       }
-      setThreads(threadsData);
 
-      const partnerIds = threadsData.map((thread) => thread.other_user_id);
-      setConversationPartnerIds(partnerIds);
+      debounceTimerRef.current = setTimeout(() => {
+        processBatchedEvents();
+      }, 100) as ReturnType<typeof setTimeout>;
+    },
+    [processBatchedEvents]
+  );
 
-      refreshUnread().catch((err) => {
-        console.error('Failed to refresh unread counts', err);
-      });
-    } finally {
-      setLoading(false);
-    }
-  }, [refreshUnread]);
+  const loadThreads = useCallback(
+    async (showSpinner = false) => {
+      if (showSpinner) {
+        dispatch({ type: 'SET_LOADING', loading: true });
+      }
+
+      try {
+        const { threads: threadsData, error } = await getUserMessageThreads();
+        if (error) {
+          if (error.message !== 'Not authenticated') {
+            console.error('[RT:List] Error loading threads:', error);
+          }
+          dispatch({ type: 'SET_THREADS', threads: [] });
+          return;
+        }
+
+        dispatch({ type: 'SET_THREADS', threads: threadsData });
+
+        if (!state.initialLoadComplete) {
+          dispatch({ type: 'INITIAL_LOAD_COMPLETE' });
+        }
+
+        refreshUnread().catch((err) => {
+          console.error('[RT:List] Failed to refresh unread counts', err);
+        });
+      } catch (error) {
+        console.error('[RT:List] Exception loading threads:', error);
+        dispatch({ type: 'SET_LOADING', loading: false });
+      }
+    },
+    [refreshUnread, state.initialLoadComplete]
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!currentUserId) return;
+      loadThreads(false);
+    }, [currentUserId, loadThreads])
+  );
 
   useEffect(() => {
-    loadThreads();
-  }, [loadThreads, refreshSignal]);
-
-  useEffect(() => {
-    loadThreads();
+    loadThreads(true);
   }, [isVisible, locationPermissionDenied]);
 
   useEffect(() => {
     if (!currentUserId) return;
 
-    let loadThreadsTimeout: ReturnType<typeof setTimeout> | null = null;
+    console.log('[RT:List] Setting up message realtime subscription');
 
-    const debouncedLoadThreads = () => {
-      if (loadThreadsTimeout) {
-        clearTimeout(loadThreadsTimeout);
-      }
-      loadThreadsTimeout = setTimeout(() => {
-        loadThreads();
-      }, 500);
+    const handleMessageEvent = async (payload: RealtimePostgresChangesPayload<any>) => {
+      const messageData = payload.new as Message;
+      if (!messageData) return;
+
+      const isMyMessage = messageData.sender_id === currentUserId;
+      const otherUserId = isMyMessage ? messageData.receiver_id : messageData.sender_id;
+
+      queueEvent(() => {
+        dispatch({
+          type: 'UPDATE_THREAD_MESSAGE',
+          otherUserId,
+          message: messageData,
+        });
+      });
     };
 
-    const channel = supabase
+    channelRef.current = supabase
       .channel('messages-list-realtime')
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'messages' },
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `receiver_id=eq.${currentUserId}`,
+        },
+        handleMessageEvent
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `sender_id=eq.${currentUserId}`,
+        },
+        handleMessageEvent
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'messages',
+        },
         (payload: RealtimePostgresChangesPayload<any>) => {
-          const messageData = payload.new as any;
-          if (messageData && (messageData.sender_id === currentUserId || messageData.receiver_id === currentUserId)) {
-            debouncedLoadThreads();
+          const messageData = payload.new as Message;
+          if (!messageData) return;
+
+          if (
+            messageData.sender_id !== currentUserId &&
+            messageData.receiver_id !== currentUserId
+          ) {
+            return;
           }
+
+          const isMyMessage = messageData.sender_id === currentUserId;
+          const otherUserId = isMyMessage ? messageData.receiver_id : messageData.sender_id;
+
+          queueEvent(() => {
+            dispatch({
+              type: 'UPDATE_THREAD_MESSAGE',
+              otherUserId,
+              message: messageData,
+            });
+          });
         }
       )
-      .subscribe();
+      .subscribe((status: string) => {
+        console.log(`[RT:List] Messages channel status: ${status}`);
+      });
 
     return () => {
-      if (loadThreadsTimeout) {
-        clearTimeout(loadThreadsTimeout);
+      if (channelRef.current) {
+        console.log('[RT:List] Cleaning up message subscription');
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
       }
-      supabase.removeChannel(channel);
     };
-  }, [currentUserId, loadThreads]);
+  }, [currentUserId, queueEvent]);
 
   useEffect(() => {
-    if (!currentUserId || conversationPartnerIds.length === 0) return;
+    if (!currentUserId || state.threads.length === 0) return;
 
-    let loadThreadsTimeout: ReturnType<typeof setTimeout> | null = null;
+    console.log('[RT:List] Setting up location realtime subscription');
 
-    const debouncedLoadThreads = () => {
-      if (loadThreadsTimeout) {
-        clearTimeout(loadThreadsTimeout);
-      }
-      loadThreadsTimeout = setTimeout(() => {
-        loadThreads();
-      }, 1000);
+    const conversationPartnerIds = state.threads.map((t) => t.other_user_id);
+
+    const handleLocationUpdate = async (otherUserId: string) => {
+      const { isNearby } = await isUserNearby(otherUserId);
+      queueEvent(() => {
+        dispatch({
+          type: 'UPDATE_THREAD_ANONYMITY',
+          otherUserId,
+          isAnonymous: !isNearby,
+        });
+      });
     };
 
-    const locationChannel = supabase
+    locationChannelRef.current = supabase
       .channel('messages-location-updates')
       .on(
         'postgres_changes',
@@ -123,25 +318,49 @@ const MessagesScreen: React.FC = () => {
         (payload: RealtimePostgresChangesPayload<any>) => {
           const locationData = payload.new as any;
           if (locationData && conversationPartnerIds.includes(locationData.id)) {
-            debouncedLoadThreads();
+            handleLocationUpdate(locationData.id);
           }
         }
       )
-      .subscribe();
+      .subscribe((status: string) => {
+        console.log(`[RT:List] Location channel status: ${status}`);
+      });
 
     return () => {
-      if (loadThreadsTimeout) {
-        clearTimeout(loadThreadsTimeout);
+      if (locationChannelRef.current) {
+        console.log('[RT:List] Cleaning up location subscription');
+        supabase.removeChannel(locationChannelRef.current);
+        locationChannelRef.current = null;
       }
-      supabase.removeChannel(locationChannel);
     };
-  }, [currentUserId, conversationPartnerIds, loadThreads]);
+  }, [currentUserId, state.threads, queueEvent]);
 
-  const handleHeaderRefresh = useCallback(() => {
-    setRefreshSignal((value) => value + 1);
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') {
+        console.log('[RT:List] App became active, reloading threads');
+        loadThreads(false);
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [loadThreads]);
+
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
   }, []);
 
-  const chatThreads = threads.map((thread) => ({
+  const handleHeaderRefresh = useCallback(() => {
+    loadThreads(true);
+  }, [loadThreads]);
+
+  const chatThreads = state.threads.map((thread) => ({
     id: thread.other_user_id,
     peer: {
       id: thread.other_user.id,
@@ -154,15 +373,23 @@ const MessagesScreen: React.FC = () => {
     unreadCount: threadUnread[thread.other_user_id] ?? thread.unread_count ?? 0,
   }));
 
+  if (state.loading && !state.initialLoadComplete) {
+    return (
+      <View style={styles.root}>
+        <StatusBar barStyle="light-content" backgroundColor="#000000" />
+        <AppHeader title="Messages" onTitlePress={handleHeaderRefresh} />
+        <View style={styles.centerContainer}>
+          <ActivityIndicator size="large" color="#60a5fa" />
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.root}>
       <StatusBar barStyle="light-content" backgroundColor="#000000" />
       <AppHeader title="Messages" onTitlePress={handleHeaderRefresh} />
-      {loading ? (
-        <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color="#60a5fa" />
-        </View>
-      ) : threads.length === 0 ? (
+      {state.threads.length === 0 ? (
         <View style={styles.centerContainer}>
           <Text style={styles.emptyText}>
             You don't have any conversations yet. Start chatting by discovering people nearby.
@@ -176,7 +403,6 @@ const MessagesScreen: React.FC = () => {
           />
         </View>
       )}
-      {/* Navigation is now rendered in the root layout */}
     </View>
   );
 };

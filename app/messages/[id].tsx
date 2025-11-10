@@ -1,5 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
+  AppState,
   FlatList,
   KeyboardAvoidingView,
   Platform,
@@ -7,7 +9,6 @@ import {
   StyleSheet,
   Text,
   View,
-  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useLocalSearchParams } from 'expo-router';
@@ -29,8 +30,10 @@ import {
 import { supabase } from '../../src/lib/supabase';
 import { useMessaging } from '../../src/contexts/MessagingContext';
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
+import { createConversationChannel } from '../../src/utils/realtime';
 
 const FALLBACK_AVATAR = 'https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_1280.png';
+const BATCH_SIZE = 50;
 
 const formatDayLabel = (isoDate: string): string => {
   const d = new Date(isoDate);
@@ -63,20 +66,112 @@ type RenderItem =
   | { type: 'day'; id: string; label: string }
   | { type: 'message'; id: string; message: ChatMsg };
 
+type MessagesState = {
+  messages: ChatMsg[];
+  hasMore: boolean;
+  isFetchingMore: boolean;
+};
+
+type MessagesAction =
+  | { type: 'SET_MESSAGES'; messages: ChatMsg[]; hasMore: boolean }
+  | { type: 'PREPEND_MESSAGES'; messages: ChatMsg[]; hasMore: boolean }
+  | { type: 'UPSERT_MESSAGE'; message: ChatMsg }
+  | { type: 'UPDATE_MESSAGE'; id: string; updates: Partial<ChatMsg> }
+  | { type: 'SET_FETCHING_MORE'; isFetchingMore: boolean };
+
+function messagesReducer(state: MessagesState, action: MessagesAction): MessagesState {
+  switch (action.type) {
+    case 'SET_MESSAGES':
+      return {
+        ...state,
+        messages: action.messages.sort(
+          (a, b) => new Date(a.sentAt).getTime() - new Date(b.sentAt).getTime()
+        ),
+        hasMore: action.hasMore,
+      };
+
+    case 'PREPEND_MESSAGES': {
+      const existingIds = new Set(state.messages.map((m) => m.id));
+      const newMessages = action.messages.filter((m) => !existingIds.has(m.id));
+      const combined = [...newMessages, ...state.messages];
+      return {
+        ...state,
+        messages: combined.sort(
+          (a, b) => new Date(a.sentAt).getTime() - new Date(b.sentAt).getTime()
+        ),
+        hasMore: action.hasMore,
+      };
+    }
+
+    case 'UPSERT_MESSAGE': {
+      const existingIndex = state.messages.findIndex((m) => m.id === action.message.id);
+      let newMessages: ChatMsg[];
+
+      if (existingIndex >= 0) {
+        newMessages = [...state.messages];
+        newMessages[existingIndex] = action.message;
+      } else {
+        newMessages = [...state.messages, action.message];
+      }
+
+      return {
+        ...state,
+        messages: newMessages.sort(
+          (a, b) => new Date(a.sentAt).getTime() - new Date(b.sentAt).getTime()
+        ),
+      };
+    }
+
+    case 'UPDATE_MESSAGE': {
+      const index = state.messages.findIndex((m) => m.id === action.id);
+      if (index === -1) return state;
+
+      const newMessages = [...state.messages];
+      newMessages[index] = { ...newMessages[index], ...action.updates };
+
+      return { ...state, messages: newMessages };
+    }
+
+    case 'SET_FETCHING_MORE':
+      return { ...state, isFetchingMore: action.isFetchingMore };
+
+    default:
+      return state;
+  }
+}
+
 const sortMessagesAsc = (list: ChatMsg[]) =>
   [...list].sort((a, b) => new Date(a.sentAt).getTime() - new Date(b.sentAt).getTime());
 
 const ChatDetailScreen: React.FC = () => {
   const params = useLocalSearchParams<{ id?: string }>();
-  const otherUserId = typeof params.id === 'string' ? params.id : Array.isArray(params.id) ? params.id[0] : undefined;
+  const otherUserId =
+    typeof params.id === 'string' ? params.id : Array.isArray(params.id) ? params.id[0] : undefined;
 
   const { markThreadDelivered, markThreadRead, setActiveConversation } = useMessaging();
   const [otherUser, setOtherUser] = useState<Profile | null>(null);
   const [socialLinks, setSocialLinks] = useState<SocialLinks | null>(null);
-  const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [isAnonymous, setIsAnonymous] = useState(false);
+
+  const [state, dispatch] = useReducer(messagesReducer, {
+    messages: [],
+    hasMore: true,
+    isFetchingMore: false,
+  });
+
+  const listRef = useRef<FlatList<RenderItem>>(null);
+  const realtimeManagerRef = useRef<ReturnType<typeof createConversationChannel> | null>(null);
+  const eventQueueRef = useRef<Array<() => void>>([]);
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const scrollYRef = useRef(0);
+  const contentHeightRef = useRef(0);
+  const preAppendHeightRef = useRef(0);
+  const preAppendOffsetRef = useRef(0);
+  const prependingRef = useRef(false);
+  const isAtBottomRef = useRef(true);
 
   const mapServerMessage = useCallback(
     (msg: Message): ChatMsg => {
@@ -119,15 +214,17 @@ const ChatDetailScreen: React.FC = () => {
         return () => {};
       }
 
+      console.log('[RT:Thread] Screen focused');
       setActiveConversation(otherUserId);
       markThreadDelivered(otherUserId).catch((error) => {
-        console.error('Failed to mark messages delivered on focus', error);
+        console.error('[RT:Thread] Failed to mark messages delivered on focus', error);
       });
       markThreadRead(otherUserId).catch((error) => {
-        console.error('Failed to mark messages read on focus', error);
+        console.error('[RT:Thread] Failed to mark messages read on focus', error);
       });
 
       return () => {
+        console.log('[RT:Thread] Screen blurred');
         setActiveConversation(null);
       };
     }, [otherUserId, markThreadDelivered, markThreadRead, setActiveConversation])
@@ -140,20 +237,31 @@ const ChatDetailScreen: React.FC = () => {
     setIsAnonymous(!isNearby);
   }, [otherUserId]);
 
-  const listRef = useRef<FlatList<RenderItem>>(null);
+  const processBatchedEvents = useCallback(() => {
+    if (eventQueueRef.current.length === 0) return;
 
-  const BATCH_SIZE = 50;
-  const [isFetchingMore, setIsFetchingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
+    console.log(`[RT:Thread] Processing ${eventQueueRef.current.length} batched events`);
+    const events = [...eventQueueRef.current];
+    eventQueueRef.current = [];
 
-  // Track scroll position and content size to keep anchor stable on prepend
-  const scrollYRef = useRef(0);
-  const contentHeightRef = useRef(0);
-  const preAppendHeightRef = useRef(0);
-  const preAppendOffsetRef = useRef(0);
-  const prependingRef = useRef(false);
+    events.forEach((fn) => fn());
+  }, []);
 
-  // Initial auto-scroll to end when switching conversations
+  const queueEvent = useCallback(
+    (fn: () => void) => {
+      eventQueueRef.current.push(fn);
+
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+
+      debounceTimerRef.current = setTimeout(() => {
+        processBatchedEvents();
+      }, 50) as ReturnType<typeof setTimeout>;
+    },
+    [processBatchedEvents]
+  );
+
   useEffect(() => {
     const timeout = setTimeout(() => {
       listRef.current?.scrollToEnd({ animated: false });
@@ -161,176 +269,162 @@ const ChatDetailScreen: React.FC = () => {
     return () => clearTimeout(timeout);
   }, [otherUserId]);
 
-
   useEffect(() => {
     if (prependingRef.current) {
-      // Skip auto-scroll when older messages are being prepended
       return;
     }
-    const timeout = setTimeout(() => {
-      listRef.current?.scrollToEnd({ animated: true });
-    }, 60);
-    return () => clearTimeout(timeout);
-  }, [messages.length]);
+    if (isAtBottomRef.current && state.messages.length > 0) {
+      const timeout = setTimeout(() => {
+        listRef.current?.scrollToEnd({ animated: true });
+      }, 60);
+      return () => clearTimeout(timeout);
+    }
+  }, [state.messages.length]);
 
   useEffect(() => {
-    if (!otherUserId) {
+    if (!otherUserId || !currentUserId) {
       return;
     }
 
-    let channelCleanup: (() => void) | null = null;
+    console.log('[RT:Thread] Setting up realtime subscription');
 
-    (async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+    const manager = createConversationChannel(otherUserId, {
+      onStatusChange: (status) => {
+        console.log(`[RT:Thread] Channel status changed: ${status}`);
+      },
+    });
 
-      const userId = user.id;
-      setCurrentUserId(userId);
+    manager.subscribeToConversation(
+      { currentUserId, otherUserId },
+      {
+        onInsert: (payload: RealtimePostgresChangesPayload<any>) => {
+          const raw = payload.new;
+          if (!isServerMessage(raw)) return;
 
-      const channel = supabase
-        .channel(`chat-user-${otherUserId}`)
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'messages',
-            filter: `sender_id=eq.${otherUserId},receiver_id=eq.${userId}`
-          },
-          (payload: RealtimePostgresChangesPayload<Message>) => {
-            const raw = payload.new;
-            if (!isServerMessage(raw)) {
-              return;
+          queueEvent(() => {
+            const mapped = mapServerMessage(raw);
+            dispatch({ type: 'UPSERT_MESSAGE', message: mapped });
+
+            if (raw.sender_id === otherUserId) {
+              markThreadRead(otherUserId).catch((err) =>
+                console.error('[RT:Thread] Failed to mark read', err)
+              );
             }
-            const newMessage = raw;
+          });
+        },
+        onUpdate: (payload: RealtimePostgresChangesPayload<any>) => {
+          const raw = payload.new;
+          if (!isServerMessage(raw)) return;
 
-            setMessages((prev) => {
-              const mapped = mapServerMessage(newMessage);
-              const existingIndex = prev.findIndex((m) => m.id === mapped.id);
-              if (existingIndex >= 0) {
-                const next = [...prev];
-                next[existingIndex] = mapped;
-                return sortMessagesAsc(next);
-              }
-              return sortMessagesAsc([...prev, mapped]);
-            });
-          }
-        )
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'messages',
-            filter: `sender_id=eq.${userId},receiver_id=eq.${otherUserId}`
-          },
-          (payload: RealtimePostgresChangesPayload<Message>) => {
-            const raw = payload.new;
-            if (!isServerMessage(raw)) {
-              return;
-            }
-            const newMessage = raw;
+          queueEvent(() => {
+            const mapped = mapServerMessage(raw);
+            dispatch({ type: 'UPSERT_MESSAGE', message: mapped });
+          });
+        },
+      }
+    );
 
-            setMessages((prev) => {
-              const mapped = mapServerMessage(newMessage);
-              const existingIndex = prev.findIndex((m) => m.id === mapped.id);
-              if (existingIndex >= 0) {
-                const next = [...prev];
-                next[existingIndex] = mapped;
-                return sortMessagesAsc(next);
-              }
-              return sortMessagesAsc([...prev, mapped]);
-            });
-          }
-        )
-        .on(
-          'postgres_changes',
-          { event: 'UPDATE', schema: 'public', table: 'messages' },
-          (payload: RealtimePostgresChangesPayload<Message>) => {
-            const raw = payload.new;
-            if (!isServerMessage(raw)) {
-              return;
-            }
-            const updatedMessage = raw;
+    manager.subscribeToLocationUpdates({ currentUserId, otherUserId }, () => {
+      queueEvent(() => {
+        checkAnonymity();
+      });
+    });
 
-            if (
-              (updatedMessage.sender_id === userId && updatedMessage.receiver_id === otherUserId) ||
-              (updatedMessage.sender_id === otherUserId && updatedMessage.receiver_id === userId)
-            ) {
-              setMessages((prev) => {
-                const index = prev.findIndex((m) => m.id === updatedMessage.id);
-                if (index === -1) {
-                  return prev;
-                }
-                const next = [...prev];
-                next[index] = mapServerMessage(updatedMessage);
-                return sortMessagesAsc(next);
-              });
-            }
-          }
-        )
-        .on(
-          'postgres_changes',
-          {
-            event: 'UPDATE',
-            schema: 'public',
-            table: 'locations',
-            filter: `id=eq.${otherUserId}`
-          },
-          (payload: RealtimePostgresChangesPayload<any>) => {
-            checkAnonymity();
-          }
-        )
-        .on(
-          'postgres_changes',
-          {
-            event: 'UPDATE',
-            schema: 'public',
-            table: 'locations',
-            filter: `id=eq.${userId}`
-          },
-          (payload: RealtimePostgresChangesPayload<any>) => {
-            checkAnonymity();
-          }
-        )
-        .subscribe();
-
-      channelCleanup = () => {
-        supabase.removeChannel(channel);
-      };
-    })();
+    realtimeManagerRef.current = manager;
 
     return () => {
-      if (channelCleanup) {
-        channelCleanup();
-      }
+      console.log('[RT:Thread] Cleaning up realtime subscription');
+      manager.unsubscribe();
+      realtimeManagerRef.current = null;
     };
-  }, [otherUserId, mapServerMessage, checkAnonymity]);
+  }, [otherUserId, currentUserId, mapServerMessage, checkAnonymity, markThreadRead, queueEvent]);
 
-  // Initial load: latest batch
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active' && otherUserId && currentUserId) {
+        console.log('[RT:Thread] App became active, resubscribing');
+        if (realtimeManagerRef.current && !realtimeManagerRef.current.isActive()) {
+          realtimeManagerRef.current.unsubscribe();
+
+          const manager = createConversationChannel(otherUserId);
+          manager.subscribeToConversation(
+            { currentUserId, otherUserId },
+            {
+              onInsert: (payload: RealtimePostgresChangesPayload<any>) => {
+                const raw = payload.new;
+                if (!isServerMessage(raw)) return;
+
+                queueEvent(() => {
+                  const mapped = mapServerMessage(raw);
+                  dispatch({ type: 'UPSERT_MESSAGE', message: mapped });
+                });
+              },
+              onUpdate: (payload: RealtimePostgresChangesPayload<any>) => {
+                const raw = payload.new;
+                if (!isServerMessage(raw)) return;
+
+                queueEvent(() => {
+                  const mapped = mapServerMessage(raw);
+                  dispatch({ type: 'UPSERT_MESSAGE', message: mapped });
+                });
+              },
+            }
+          );
+
+          manager.subscribeToLocationUpdates({ currentUserId, otherUserId }, () => {
+            queueEvent(() => {
+              checkAnonymity();
+            });
+          });
+
+          realtimeManagerRef.current = manager;
+        }
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [otherUserId, currentUserId, mapServerMessage, checkAnonymity, queueEvent]);
+
   useEffect(() => {
     const loadChat = async () => {
-      if (!otherUserId || !currentUserId) return;
+      if (!otherUserId) return;
 
       setLoading(true);
 
-      const { profile, socialLinks: social, error: profileError } = await getProfileById(otherUserId);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        setCurrentUserId(user.id);
+      }
+
+      const { profile, socialLinks: social, error: profileError } = await getProfileById(
+        otherUserId
+      );
 
       if (profileError || !profile) {
-        console.error('Error loading profile:', profileError);
+        console.error('[RT:Thread] Error loading profile:', profileError);
       } else {
         setOtherUser(profile);
         setSocialLinks(social);
       }
 
-      const { messages: messagesData, error: messagesError } = await getMessagesBetweenUsers(otherUserId, BATCH_SIZE);
+      if (user) {
+        const { messages: messagesData, error: messagesError } = await getMessagesBetweenUsers(
+          otherUserId,
+          BATCH_SIZE
+        );
 
-      if (messagesError) {
-        console.error('Error loading messages:', messagesError);
-      } else {
-        const chatMessages = sortMessagesAsc(messagesData.map(mapServerMessage));
-        setMessages(chatMessages);
-        setHasMore(messagesData.length === BATCH_SIZE);
+        if (messagesError) {
+          console.error('[RT:Thread] Error loading messages:', messagesError);
+        } else {
+          const chatMessages = sortMessagesAsc(messagesData.map(mapServerMessage));
+          dispatch({
+            type: 'SET_MESSAGES',
+            messages: chatMessages,
+            hasMore: messagesData.length === BATCH_SIZE,
+          });
+        }
       }
 
       await checkAnonymity();
@@ -339,38 +433,48 @@ const ChatDetailScreen: React.FC = () => {
     };
 
     loadChat();
-  }, [otherUserId, currentUserId, mapServerMessage, checkAnonymity]);
+  }, [otherUserId, mapServerMessage, checkAnonymity]);
 
   const loadOlder = useCallback(async () => {
-    if (isFetchingMore || !hasMore || !otherUserId || messages.length === 0) return;
+    if (state.isFetchingMore || !state.hasMore || !otherUserId || state.messages.length === 0)
+      return;
 
-    const oldest = messages[0]?.sentAt;
+    const oldest = state.messages[0]?.sentAt;
     if (!oldest) return;
 
-    setIsFetchingMore(true);
+    console.log('[RT:Thread] Loading older messages');
+    dispatch({ type: 'SET_FETCHING_MORE', isFetchingMore: true });
     preAppendHeightRef.current = contentHeightRef.current;
     preAppendOffsetRef.current = scrollYRef.current;
     prependingRef.current = true;
 
-    const { messages: olderData, error } = await getMessagesBetweenUsers(otherUserId, BATCH_SIZE, oldest);
+    const { messages: olderData, error } = await getMessagesBetweenUsers(
+      otherUserId,
+      BATCH_SIZE,
+      oldest
+    );
 
     if (error) {
-      console.error('Error loading older messages:', error);
+      console.error('[RT:Thread] Error loading older messages:', error);
     } else if (olderData.length > 0) {
       const olderAsc = sortMessagesAsc(olderData.map(mapServerMessage));
-      setMessages((prev) => [...olderAsc, ...prev]);
-      setHasMore(olderData.length === BATCH_SIZE);
+      dispatch({
+        type: 'PREPEND_MESSAGES',
+        messages: olderAsc,
+        hasMore: olderData.length === BATCH_SIZE,
+      });
     } else {
-      setHasMore(false);
+      dispatch({ type: 'SET_FETCHING_MORE', isFetchingMore: false });
+      prependingRef.current = false;
     }
 
-    setIsFetchingMore(false);
-  }, [isFetchingMore, hasMore, otherUserId, messages, mapServerMessage]);
+    dispatch({ type: 'SET_FETCHING_MORE', isFetchingMore: false });
+  }, [state.isFetchingMore, state.hasMore, state.messages, otherUserId, mapServerMessage]);
 
   const data = useMemo<RenderItem[]>(() => {
     const entries: RenderItem[] = [];
     let currentLabel: string | null = null;
-    messages.forEach((message) => {
+    state.messages.forEach((message) => {
       const label = formatDayLabel(message.sentAt);
       if (label !== currentLabel) {
         currentLabel = label;
@@ -379,7 +483,7 @@ const ChatDetailScreen: React.FC = () => {
       entries.push({ type: 'message', id: message.id, message });
     });
     return entries;
-  }, [messages]);
+  }, [state.messages]);
 
   const handleSend = async (text: string) => {
     if (!otherUserId) {
@@ -401,7 +505,7 @@ const ChatDetailScreen: React.FC = () => {
       status: 'pending',
     };
 
-    setMessages((prev) => sortMessagesAsc([...prev, optimisticMessage]));
+    dispatch({ type: 'UPSERT_MESSAGE', message: optimisticMessage });
 
     try {
       const { message, error } = await sendMessage(otherUserId, body);
@@ -409,16 +513,17 @@ const ChatDetailScreen: React.FC = () => {
         throw error ?? new Error('Message failed to send');
       }
 
-      setMessages((prev) =>
-        sortMessagesAsc(
-          prev.map((m) => (m.id === optimisticId ? mapServerMessage(message) : m))
-        )
-      );
+      dispatch({
+        type: 'UPSERT_MESSAGE',
+        message: mapServerMessage(message),
+      });
     } catch (err) {
-      console.error('Error sending message:', err);
-      setMessages((prev) =>
-        prev.map((m) => (m.id === optimisticId ? { ...m, status: 'failed' } : m))
-      );
+      console.error('[RT:Thread] Error sending message:', err);
+      dispatch({
+        type: 'UPDATE_MESSAGE',
+        id: optimisticId,
+        updates: { status: 'failed' },
+      });
     }
   };
 
@@ -429,13 +534,11 @@ const ChatDetailScreen: React.FC = () => {
       }
 
       const retryTimestamp = new Date().toISOString();
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === message.id
-            ? { ...m, status: 'pending', sentAt: retryTimestamp }
-            : m
-        )
-      );
+      dispatch({
+        type: 'UPDATE_MESSAGE',
+        id: message.id,
+        updates: { status: 'pending', sentAt: retryTimestamp },
+      });
 
       try {
         const { message: sentMessage, error } = await sendMessage(otherUserId, message.text);
@@ -443,16 +546,17 @@ const ChatDetailScreen: React.FC = () => {
           throw error ?? new Error('Retry failed');
         }
 
-        setMessages((prev) =>
-          sortMessagesAsc(
-            prev.map((m) => (m.id === message.id ? mapServerMessage(sentMessage) : m))
-          )
-        );
+        dispatch({
+          type: 'UPSERT_MESSAGE',
+          message: mapServerMessage(sentMessage),
+        });
       } catch (err) {
-        console.error('Error retrying message send:', err);
-        setMessages((prev) =>
-          prev.map((m) => (m.id === message.id ? { ...m, status: 'failed' } : m))
-        );
+        console.error('[RT:Thread] Error retrying message send:', err);
+        dispatch({
+          type: 'UPDATE_MESSAGE',
+          id: message.id,
+          updates: { status: 'failed' },
+        });
       }
     },
     [otherUserId, mapServerMessage]
@@ -487,7 +591,9 @@ const ChatDetailScreen: React.FC = () => {
   }
 
   const displayName = isAnonymous ? 'Anonymous' : otherUser.display_name;
-  const displayAvatar = isAnonymous ? undefined : (socialLinks?.profile_pic_url || FALLBACK_AVATAR);
+  const displayAvatar = isAnonymous
+    ? undefined
+    : socialLinks?.profile_pic_url || FALLBACK_AVATAR;
 
   return (
     <View style={styles.root}>
@@ -521,7 +627,9 @@ const ChatDetailScreen: React.FC = () => {
                   createdAt={item.message.sentAt}
                   isMine={item.message.fromMe}
                   status={item.message.status}
-                  onRetry={item.message.status === 'failed' ? () => handleRetry(item.message) : undefined}
+                  onRetry={
+                    item.message.status === 'failed' ? () => handleRetry(item.message) : undefined
+                  }
                 />
               );
             }}
@@ -530,7 +638,12 @@ const ChatDetailScreen: React.FC = () => {
             showsVerticalScrollIndicator={false}
             onScroll={(e) => {
               const y = e.nativeEvent.contentOffset.y;
+              const height = e.nativeEvent.layoutMeasurement.height;
+              const contentHeight = e.nativeEvent.contentSize.height;
+
               scrollYRef.current = y;
+              isAtBottomRef.current = y + height >= contentHeight - 20;
+
               const TOP_THRESHOLD = 24;
               if (y <= TOP_THRESHOLD) {
                 loadOlder();
@@ -541,14 +654,17 @@ const ChatDetailScreen: React.FC = () => {
               if (prependingRef.current) {
                 const delta = h - preAppendHeightRef.current;
                 if (delta > 0) {
-                  listRef.current?.scrollToOffset({ offset: preAppendOffsetRef.current + delta, animated: false });
+                  listRef.current?.scrollToOffset({
+                    offset: preAppendOffsetRef.current + delta,
+                    animated: false,
+                  });
                 }
                 prependingRef.current = false;
               }
               contentHeightRef.current = h;
             }}
             ListHeaderComponent={
-              isFetchingMore ? (
+              state.isFetchingMore ? (
                 <View style={{ paddingVertical: 8, alignItems: 'center' }}>
                   <ActivityIndicator size="small" color={theme.colors.muted} />
                 </View>
