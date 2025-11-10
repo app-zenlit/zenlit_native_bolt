@@ -16,6 +16,23 @@ export type MessageFilter = {
 
 export type MessageEventHandler = (payload: RealtimePostgresChangesPayload<any>) => void;
 
+export type PresenceState = {
+  userId: string;
+  onlineAt: string;
+};
+
+export type BroadcastMessage = {
+  id: string;
+  senderId: string;
+  text: string;
+  createdAt: string;
+};
+
+export type TypingEvent = {
+  userId: string;
+  isTyping: boolean;
+};
+
 export class RealtimeManager {
   private channel: RealtimeChannel | null = null;
   private config: RealtimeConfig;
@@ -23,6 +40,9 @@ export class RealtimeManager {
   private retryCount = 0;
   private maxRetries = 4;
   private retryTimeout: ReturnType<typeof setTimeout> | null = null;
+  private onPresenceSync?: (users: string[]) => void;
+  private onTypingChange?: (event: TypingEvent) => void;
+  private onBroadcastMessage?: (message: BroadcastMessage) => void;
 
   constructor(config: RealtimeConfig) {
     this.config = config;
@@ -37,13 +57,16 @@ export class RealtimeManager {
     return Math.min(1000 * Math.pow(2, this.retryCount), 16000);
   }
 
-  subscribeToConversation(
+  async subscribeToConversation(
     filter: MessageFilter,
     handlers: {
       onInsert: MessageEventHandler;
       onUpdate?: MessageEventHandler;
+      onPresenceSync?: (users: string[]) => void;
+      onTypingChange?: (event: TypingEvent) => void;
+      onBroadcastMessage?: (message: BroadcastMessage) => void;
     }
-  ): void {
+  ): Promise<void> {
     if (this.channel) {
       this.log('Channel already exists, cleaning up before resubscribe');
       this.unsubscribe();
@@ -53,8 +76,21 @@ export class RealtimeManager {
 
     const { currentUserId, otherUserId } = filter;
 
+    this.onPresenceSync = handlers.onPresenceSync;
+    this.onTypingChange = handlers.onTypingChange;
+    this.onBroadcastMessage = handlers.onBroadcastMessage;
+
+    await supabase.realtime.setAuth();
+
     this.channel = supabase
-      .channel(this.config.channelName)
+      .channel(this.config.channelName, {
+        config: {
+          private: true,
+          presence: {
+            key: currentUserId,
+          },
+        },
+      })
       .on(
         'postgres_changes',
         {
@@ -101,12 +137,43 @@ export class RealtimeManager {
           }
         }
       )
-      .subscribe((status: string) => {
+      .on('presence', { event: 'sync' }, () => {
+        if (!this.channel) return;
+
+        const state = this.channel.presenceState<PresenceState>();
+        const userIds = Object.keys(state);
+        this.log(`Presence synced: ${userIds.length} users online`);
+
+        if (this.onPresenceSync) {
+          this.onPresenceSync(userIds);
+        }
+      })
+      .on('broadcast', { event: 'typing' }, (payload) => {
+        this.log('Received typing event', payload);
+        if (this.onTypingChange && payload.payload) {
+          this.onTypingChange(payload.payload as TypingEvent);
+        }
+      })
+      .on('broadcast', { event: 'message' }, (payload) => {
+        this.log('Received broadcast message', payload);
+        if (this.onBroadcastMessage && payload.payload) {
+          this.onBroadcastMessage(payload.payload as BroadcastMessage);
+        }
+      })
+      .subscribe(async (status: string) => {
         this.log(`Channel status: ${status}`);
 
         if (status === 'SUBSCRIBED') {
           this.isSubscribed = true;
           this.retryCount = 0;
+
+          if (this.channel) {
+            await this.channel.track({
+              userId: currentUserId,
+              onlineAt: new Date().toISOString(),
+            });
+          }
+
           if (this.config.onStatusChange) {
             this.config.onStatusChange('SUBSCRIBED');
           }
@@ -182,11 +249,34 @@ export class RealtimeManager {
     }
   }
 
+  async broadcastTyping(userId: string, isTyping: boolean): Promise<void> {
+    if (!this.channel) return;
+
+    await this.channel.send({
+      type: 'broadcast',
+      event: 'typing',
+      payload: { userId, isTyping } as TypingEvent,
+    });
+  }
+
+  async broadcastMessage(message: BroadcastMessage): Promise<void> {
+    if (!this.channel) return;
+
+    await this.channel.send({
+      type: 'broadcast',
+      event: 'message',
+      payload: message,
+    });
+  }
+
   private attemptRetry(
     filter: MessageFilter,
     handlers: {
       onInsert: MessageEventHandler;
       onUpdate?: MessageEventHandler;
+      onPresenceSync?: (users: string[]) => void;
+      onTypingChange?: (event: TypingEvent) => void;
+      onBroadcastMessage?: (message: BroadcastMessage) => void;
     }
   ): void {
     if (this.retryCount >= this.maxRetries) {
@@ -203,7 +293,7 @@ export class RealtimeManager {
     }, backoff);
   }
 
-  unsubscribe(): void {
+  async unsubscribe(): Promise<void> {
     if (this.retryTimeout) {
       clearTimeout(this.retryTimeout);
       this.retryTimeout = null;
@@ -211,6 +301,13 @@ export class RealtimeManager {
 
     if (this.channel) {
       this.log('Unsubscribing channel');
+
+      try {
+        await this.channel.untrack();
+      } catch (error) {
+        this.log('Error untracking presence', error);
+      }
+
       supabase.removeChannel(this.channel);
       this.channel = null;
       this.isSubscribed = false;
@@ -219,6 +316,11 @@ export class RealtimeManager {
 
   isActive(): boolean {
     return this.isSubscribed;
+  }
+
+  getPresenceState(): Record<string, PresenceState[]> {
+    if (!this.channel) return {};
+    return this.channel.presenceState<PresenceState>();
   }
 }
 

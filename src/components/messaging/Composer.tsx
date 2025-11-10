@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -8,17 +8,62 @@ import { gradientColors, theme } from '../../styles/theme';
 export type ComposerProps = {
   onSend: (value: string) => void;
   disabled?: boolean;
+  onTypingChange?: (isTyping: boolean) => void;
 };
 
-const Composer: React.FC<ComposerProps> = ({ onSend, disabled = false }) => {
+const Composer: React.FC<ComposerProps> = ({ onSend, disabled = false, onTypingChange }) => {
   const [value, setValue] = useState('');
   const canSend = useMemo(() => !disabled && value.trim().length > 0, [disabled, value]);
+  const isTypingRef = useRef(false);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const stopTyping = useCallback(() => {
+    if (isTypingRef.current) {
+      isTypingRef.current = false;
+      onTypingChange?.(false);
+    }
+  }, [onTypingChange]);
+
+  const handleTextChange = useCallback((text: string) => {
+    setValue(text);
+
+    if (disabled || !onTypingChange) {
+      return;
+    }
+
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+
+    if (text.trim().length > 0) {
+      if (!isTypingRef.current) {
+        isTypingRef.current = true;
+        onTypingChange(true);
+      }
+
+      typingTimeoutRef.current = setTimeout(() => {
+        stopTyping();
+      }, 2000);
+    } else {
+      stopTyping();
+    }
+  }, [disabled, onTypingChange, stopTyping]);
+
+  useEffect(() => {
+    return () => {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+      stopTyping();
+    };
+  }, [stopTyping]);
 
   const handleSend = () => {
     if (!canSend) {
       return;
     }
     const trimmed = value.trim();
+    stopTyping();
     onSend(trimmed);
     setValue('');
   };
@@ -30,7 +75,7 @@ const Composer: React.FC<ComposerProps> = ({ onSend, disabled = false }) => {
           <TextInput
             style={[styles.input, disabled ? styles.inputTextDisabled : null]}
             value={value}
-            onChangeText={setValue}
+            onChangeText={handleTextChange}
             placeholder={disabled ? 'Chat is read-only.' : 'Type a message'}
             placeholderTextColor={disabled ? theme.colors.iconInactive : theme.colors.muted}
             editable={!disabled}
