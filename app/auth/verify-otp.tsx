@@ -94,8 +94,8 @@ export default function VerifyOTPScreen() {
           .maybeSingle();
 
         if (profile) {
-          // Profile exists, go to feed
-          router.replace('/feed');
+          // Profile exists, go to radar
+          router.replace('/radar');
         } else {
           // Profile doesn't exist, go to onboarding
           router.replace('/onboarding/profile/basic');

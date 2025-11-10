@@ -189,7 +189,7 @@ const CompleteProfileScreen: React.FC = () => {
         successTimeoutRef.current = setTimeout(() => {
           if (mountedRef.current) {
             setShowSuccess(false);
-            router.replace('/feed');
+            router.replace('/radar');
             successTimeoutRef.current = null;
           }
         }, 800);
@@ -216,7 +216,7 @@ const CompleteProfileScreen: React.FC = () => {
     clearSuccessTimeout();
     setShowSuccess(false);
     clearPendingImages();
-    router.replace('/feed');
+    router.replace('/radar');
   };
 
   const openBannerMenu = () => {
