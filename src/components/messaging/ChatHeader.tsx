@@ -18,11 +18,14 @@ export type ChatHeaderProps = {
   avatarUrl?: string;
   isAnonymous?: boolean;
   profileId?: string;
+  isOnline?: boolean;
+  isTyping?: boolean;
 };
 
-const ChatHeader: React.FC<ChatHeaderProps> = ({ title, subtitle, avatarUrl, isAnonymous = false, profileId }) => {
+const ChatHeader: React.FC<ChatHeaderProps> = ({ title, subtitle, avatarUrl, isAnonymous = false, profileId, isOnline = false, isTyping = false }) => {
   const router = useRouter();
   const initial = title?.trim().charAt(0)?.toUpperCase() ?? 'C';
+  const displaySubtitle = isTyping ? 'typing...' : subtitle || (isOnline ? 'online' : '');
 
   const shadowStyle = createShadowStyle({
     native: {
@@ -50,27 +53,32 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({ title, subtitle, avatarUrl, isA
           </Pressable>
 
           <View style={styles.profileRow}>
-            <Pressable
-              style={({ pressed }) => [styles.avatarFrame, pressed && !isAnonymous ? styles.avatarPressed : null]}
-              android_ripple={{ color: isAnonymous ? 'transparent' : 'rgba(255, 255, 255, 0.12)' }}
-              accessibilityRole="button"
-              accessibilityLabel={isAnonymous ? "Anonymous user" : "View user profile"}
-              accessibilityState={{ disabled: isAnonymous || !profileId }}
-              disabled={isAnonymous || !profileId}
-              onPress={() => !isAnonymous && profileId && router.push(`/profile/${profileId}`)}
-            >
-              {avatarUrl && !isAnonymous ? (
-                <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
-              ) : (
-                <View style={styles.avatarFallback}>
-                  {isAnonymous ? (
-                    <Feather name="user" size={20} color={theme.colors.icon} />
-                  ) : (
-                    <Text style={styles.avatarInitial}>{initial}</Text>
-                  )}
-                </View>
+            <View style={styles.avatarContainer}>
+              <Pressable
+                style={({ pressed }) => [styles.avatarFrame, pressed && !isAnonymous ? styles.avatarPressed : null]}
+                android_ripple={{ color: isAnonymous ? 'transparent' : 'rgba(255, 255, 255, 0.12)' }}
+                accessibilityRole="button"
+                accessibilityLabel={isAnonymous ? "Anonymous user" : "View user profile"}
+                accessibilityState={{ disabled: isAnonymous || !profileId }}
+                disabled={isAnonymous || !profileId}
+                onPress={() => !isAnonymous && profileId && router.push(`/profile/${profileId}`)}
+              >
+                {avatarUrl && !isAnonymous ? (
+                  <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
+                ) : (
+                  <View style={styles.avatarFallback}>
+                    {isAnonymous ? (
+                      <Feather name="user" size={20} color={theme.colors.icon} />
+                    ) : (
+                      <Text style={styles.avatarInitial}>{initial}</Text>
+                    )}
+                  </View>
+                )}
+              </Pressable>
+              {isOnline && !isAnonymous && (
+                <View style={styles.onlineIndicator} />
               )}
-            </Pressable>
+            </View>
 
             <View style={styles.textBlock}>
               <Pressable
@@ -90,6 +98,11 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({ title, subtitle, avatarUrl, isA
                   {title}
                 </Text>
               </Pressable>
+              {displaySubtitle ? (
+                <Text style={[styles.subtitle, isTyping && styles.subtitleTyping]} numberOfLines={1}>
+                  {displaySubtitle}
+                </Text>
+              ) : null}
             </View>
           </View>
 
@@ -135,16 +148,30 @@ const styles = StyleSheet.create({
     marginHorizontal: theme.header.contentSpacing,
     gap: 12,
   },
+  avatarContainer: {
+    position: 'relative',
+  },
   avatarFrame: {
     width: AVATAR_SIZE,
     height: AVATAR_SIZE,
-    borderRadius: AVATAR_SIZE / 2, // circular in chat header only
+    borderRadius: AVATAR_SIZE / 2,
     overflow: 'hidden',
     borderWidth: 0,
     borderColor: 'transparent',
     backgroundColor: theme.colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  onlineIndicator: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#22c55e',
+    borderWidth: 2,
+    borderColor: theme.colors.headerBackground,
   },
   avatarPressed: {
     opacity: 0.85,
@@ -175,9 +202,17 @@ const styles = StyleSheet.create({
   },
   title: {
     flexShrink: 1,
-    // Match feed author name sizing
     fontSize: 16,
     fontWeight: '600',
+  },
+  subtitle: {
+    fontSize: 13,
+    color: theme.colors.muted,
+    marginTop: 2,
+  },
+  subtitleTyping: {
+    color: '#22c55e',
+    fontStyle: 'italic',
   },
   trailingSpace: {
     width: TOUCH_SIZE,

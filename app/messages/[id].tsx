@@ -17,6 +17,7 @@ import ChatHeader from '../../src/components/messaging/ChatHeader';
 import Composer from '../../src/components/messaging/Composer';
 import DayDivider from '../../src/components/messaging/DayDivider';
 import MessageBubble, { type MessageStatus } from '../../src/components/messaging/MessageBubble';
+import TypingIndicator from '../../src/components/messaging/TypingIndicator';
 import { theme } from '../../src/styles/theme';
 import {
   getMessagesBetweenUsers,
@@ -30,7 +31,8 @@ import {
 import { supabase } from '../../src/lib/supabase';
 import { useMessaging } from '../../src/contexts/MessagingContext';
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
-import { createConversationChannel } from '../../src/utils/realtime';
+import { createConversationChannel, type BroadcastMessage, type TypingEvent } from '../../src/utils/realtime';
+import { setupChatRealtime } from '../../src/utils/chatRealtimeSetup';
 
 const FALLBACK_AVATAR = 'https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_1280.png';
 const BATCH_SIZE = 50;
@@ -154,6 +156,9 @@ const ChatDetailScreen: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [isAnonymous, setIsAnonymous] = useState(false);
+  const [isOnline, setIsOnline] = useState(false);
+  const [isTyping, setIsTyping] = useState(false);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [state, dispatch] = useReducer(messagesReducer, {
     messages: [],
@@ -239,6 +244,34 @@ const ChatDetailScreen: React.FC = () => {
     setIsAnonymous(!isNearby);
   }, [otherUserId]);
 
+  const handleTypingChange = useCallback((isUserTyping: boolean) => {
+    if (!currentUserId || !realtimeManagerRef.current) return;
+
+    realtimeManagerRef.current.broadcastTyping(currentUserId, isUserTyping);
+  }, [currentUserId]);
+
+  const handleTypingEvent = useCallback((event: TypingEvent) => {
+    if (event.userId === otherUserId) {
+      setIsTyping(event.isTyping);
+
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+
+      if (event.isTyping) {
+        typingTimeoutRef.current = setTimeout(() => {
+          setIsTyping(false);
+        }, 3000);
+      }
+    }
+  }, [otherUserId]);
+
+  const handlePresenceSync = useCallback((userIds: string[]) => {
+    if (otherUserId) {
+      setIsOnline(userIds.includes(otherUserId));
+    }
+  }, [otherUserId]);
+
   const processBatchedEvents = useCallback(() => {
     if (eventQueueRef.current.length === 0) return;
 
@@ -290,49 +323,42 @@ const ChatDetailScreen: React.FC = () => {
 
     console.log('[RT:Thread] Setting up realtime subscription');
 
-    const manager = createConversationChannel(otherUserId, {
-      onStatusChange: (status) => {
-        console.log(`[RT:Thread] Channel status changed: ${status}`);
-      },
-    });
-
-    manager.subscribeToConversation(
-      { currentUserId, otherUserId },
-      {
-        onInsert: (payload: RealtimePostgresChangesPayload<any>) => {
-          const raw = payload.new;
-          if (!isServerMessage(raw)) return;
-
+    const manager = setupChatRealtime({
+      currentUserId,
+      otherUserId,
+      handlers: {
+        onMessageInsert: (message) => {
           queueEvent(() => {
-            const mapped = mapServerMessage(raw);
+            const mapped = mapServerMessage(message);
             dispatch({ type: 'UPSERT_MESSAGE', message: mapped });
 
-            if (raw.sender_id === otherUserId && isAtBottomRef.current) {
+            if (message.sender_id === otherUserId && isAtBottomRef.current) {
               console.log('[RT:Thread] New message from other user, marking as read (user at bottom)');
               markThreadRead(otherUserId).catch((err) =>
                 console.error('[RT:Thread] Failed to mark read', err)
               );
-              lastReadMessageIdRef.current = raw.id;
+              lastReadMessageIdRef.current = message.id;
               hasMarkedReadRef.current = true;
             }
           });
         },
-        onUpdate: (payload: RealtimePostgresChangesPayload<any>) => {
-          const raw = payload.new;
-          if (!isServerMessage(raw)) return;
-
+        onMessageUpdate: (message) => {
           queueEvent(() => {
-            const mapped = mapServerMessage(raw);
+            const mapped = mapServerMessage(message);
             dispatch({ type: 'UPSERT_MESSAGE', message: mapped });
           });
         },
-      }
-    );
-
-    manager.subscribeToLocationUpdates({ currentUserId, otherUserId }, () => {
-      queueEvent(() => {
-        checkAnonymity();
-      });
+        onLocationUpdate: () => {
+          queueEvent(() => {
+            checkAnonymity();
+          });
+        },
+        onPresenceSync: handlePresenceSync,
+        onTypingChange: handleTypingEvent,
+        onBroadcastMessage: (message) => {
+          console.log('[RT:Thread] Received broadcast message', message);
+        },
+      },
     });
 
     realtimeManagerRef.current = manager;
@@ -342,7 +368,7 @@ const ChatDetailScreen: React.FC = () => {
       manager.unsubscribe();
       realtimeManagerRef.current = null;
     };
-  }, [otherUserId, currentUserId, mapServerMessage, checkAnonymity, markThreadRead, queueEvent]);
+  }, [otherUserId, currentUserId, mapServerMessage, checkAnonymity, markThreadRead, queueEvent, handlePresenceSync, handleTypingEvent]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextAppState) => {
@@ -610,6 +636,8 @@ const ChatDetailScreen: React.FC = () => {
           avatarUrl={displayAvatar}
           isAnonymous={isAnonymous}
           profileId={otherUser.id}
+          isOnline={isOnline}
+          isTyping={isTyping}
         />
       </SafeAreaView>
 
@@ -685,9 +713,14 @@ const ChatDetailScreen: React.FC = () => {
                 </View>
               ) : null
             }
+            ListFooterComponent={
+              isTyping && !isAnonymous && otherUser ? (
+                <TypingIndicator displayName={displayName} />
+              ) : null
+            }
           />
           <SafeAreaView edges={['bottom']} style={styles.composerWrapper}>
-            <Composer onSend={handleSend} disabled={isAnonymous} />
+            <Composer onSend={handleSend} disabled={isAnonymous} onTypingChange={handleTypingChange} />
           </SafeAreaView>
         </View>
       </KeyboardAvoidingView>
