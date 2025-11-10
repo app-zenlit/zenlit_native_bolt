@@ -4,7 +4,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
-import GradientTitle from '../GradientTitle';
 import { theme } from '../../styles/theme';
 import { createShadowStyle } from '../../utils/shadow';
 
@@ -83,7 +82,13 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({ title, subtitle, avatarUrl, isA
                 disabled={isAnonymous || !profileId}
                 onPress={() => !isAnonymous && profileId && router.push(`/profile/${profileId}`)}
               >
-                <GradientTitle text={title} numberOfLines={1} style={styles.title} />
+                <Text
+                  style={[styles.title, { color: theme.colors.text }]}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
+                  {title}
+                </Text>
               </Pressable>
             </View>
           </View>
