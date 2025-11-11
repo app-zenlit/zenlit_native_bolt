@@ -194,7 +194,8 @@ export async function getMessagesBetweenUsers(
 
 export async function sendMessage(
   receiverId: string,
-  text: string
+  text: string,
+  messageId?: string
 ): Promise<{ message: Message | null; error: Error | null }> {
   try {
     if (!text || text.trim().length === 0) {
@@ -207,13 +208,19 @@ export async function sendMessage(
       return { message: null, error: new Error('Not authenticated') };
     }
 
+    const insertData: any = {
+      sender_id: user.id,
+      receiver_id: receiverId,
+      text,
+    };
+
+    if (messageId) {
+      insertData.id = messageId;
+    }
+
     const { data: message, error: messageError } = await supabase
       .from('messages')
-      .insert({
-        sender_id: user.id,
-        receiver_id: receiverId,
-        text,
-      })
+      .insert(insertData)
       .select()
       .single();
 

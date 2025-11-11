@@ -40,7 +40,6 @@ export class RealtimeManager {
   private retryCount = 0;
   private maxRetries = 4;
   private retryTimeout: ReturnType<typeof setTimeout> | null = null;
-  private lastStatus: ChannelStatus | null = null;
   private onPresenceSync?: (users: string[]) => void;
   private onTypingChange?: (event: TypingEvent) => void;
   private onBroadcastMessage?: (message: BroadcastMessage) => void;
@@ -70,11 +69,10 @@ export class RealtimeManager {
   ): Promise<void> {
     if (this.channel) {
       this.log('Channel already exists, cleaning up before resubscribe');
-      // Ensure we fully unsubscribe before creating a fresh channel to avoid race conditions
-      await this.unsubscribe();
+      this.unsubscribe();
     }
 
-    this.log(`Subscribing to conversation: ${filter.otherUserId}`);
+    this.log(`Subscribing to conversation with ${filter.otherUserId} on private channel chat:${filter.currentUserId}`);
 
     const { currentUserId, otherUserId } = filter;
 
@@ -85,7 +83,7 @@ export class RealtimeManager {
     await supabase.realtime.setAuth();
 
     this.channel = supabase
-      .channel(this.config.channelName, {
+      .channel(`chat:${currentUserId}`, {
         config: {
           private: true,
           presence: {
@@ -93,32 +91,33 @@ export class RealtimeManager {
           },
         },
       })
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'messages',
-          filter: `sender_id=eq.${otherUserId}&receiver_id=eq.${currentUserId}`,
-        },
-        (payload: RealtimePostgresChangesPayload<any>) => {
-          this.log('Received INSERT from other user');
-          handlers.onInsert(payload);
+      .on('broadcast', { event: 'INSERT' }, (payload: any) => {
+        this.log('Received broadcast INSERT event', payload);
+
+        const message = payload.payload;
+        if (!message) {
+          this.log('No payload in broadcast event');
+          return;
         }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'messages',
-          filter: `sender_id=eq.${currentUserId}&receiver_id=eq.${otherUserId}`,
-        },
-        (payload: RealtimePostgresChangesPayload<any>) => {
-          this.log('Received INSERT from current user');
-          handlers.onInsert(payload);
+
+        if (
+          (message.sender_id === otherUserId && message.receiver_id === currentUserId) ||
+          (message.sender_id === currentUserId && message.receiver_id === otherUserId)
+        ) {
+          this.log('Message belongs to active conversation, processing');
+          handlers.onInsert({
+            eventType: 'INSERT',
+            new: message,
+            old: {},
+            schema: 'public',
+            table: 'messages',
+            commit_timestamp: new Date().toISOString(),
+            errors: null,
+          } as RealtimePostgresChangesPayload<any>);
+        } else {
+          this.log('Message not for this conversation, ignoring');
         }
-      )
+      })
       .on(
         'postgres_changes',
         {
@@ -150,24 +149,20 @@ export class RealtimeManager {
           this.onPresenceSync(userIds);
         }
       })
-      .on('broadcast', { event: 'typing' }, (payload: { payload?: unknown }) => {
+      .on('broadcast', { event: 'typing' }, (payload) => {
         this.log('Received typing event', payload);
         if (this.onTypingChange && payload.payload) {
           this.onTypingChange(payload.payload as TypingEvent);
         }
       })
-      .on('broadcast', { event: 'message' }, (payload: { payload?: unknown }) => {
+      .on('broadcast', { event: 'message' }, (payload) => {
         this.log('Received broadcast message', payload);
         if (this.onBroadcastMessage && payload.payload) {
           this.onBroadcastMessage(payload.payload as BroadcastMessage);
         }
       })
       .subscribe(async (status: string) => {
-        // Reduce noisy logs: only log status changes
-        if (status !== this.lastStatus) {
-          this.log(`Channel status: ${status}`);
-          this.lastStatus = status as ChannelStatus;
-        }
+        this.log(`Channel status: ${status}`);
 
         if (status === 'SUBSCRIBED') {
           this.isSubscribed = true;
@@ -305,26 +300,18 @@ export class RealtimeManager {
       this.retryTimeout = null;
     }
 
-    const channelToRemove = this.channel;
-    // Set internal state early to avoid races with resubscribe flows
-    this.channel = null;
-    this.isSubscribed = false;
-
-    if (channelToRemove) {
+    if (this.channel) {
       this.log('Unsubscribing channel');
 
       try {
-        await channelToRemove.untrack();
+        await this.channel.untrack();
       } catch (error) {
-        // Presence untrack can fail if not fully subscribed; swallow to avoid noisy logs
+        this.log('Error untracking presence', error);
       }
 
-      try {
-        // Some versions call unsubscribe internally; wrap to avoid throwing when already unsubscribed
-        supabase.removeChannel(channelToRemove);
-      } catch {
-        // Swallow errors from removeChannel to prevent unhandled promise exceptions
-      }
+      supabase.removeChannel(this.channel);
+      this.channel = null;
+      this.isSubscribed = false;
     }
   }
 

@@ -33,6 +33,7 @@ import { useMessaging } from '../../src/contexts/MessagingContext';
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 import { createConversationChannel, type BroadcastMessage, type TypingEvent } from '../../src/utils/realtime';
 import { setupChatRealtime } from '../../src/utils/chatRealtimeSetup';
+import { generateUUID } from '../../src/utils/uuid';
 
 const FALLBACK_AVATAR = 'https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_1280.png';
 const BATCH_SIZE = 50;
@@ -527,10 +528,10 @@ const ChatDetailScreen: React.FC = () => {
       return;
     }
 
-    const optimisticId = `local-${Date.now()}`;
+    const messageId = generateUUID();
     const nowIso = new Date().toISOString();
     const optimisticMessage: ChatMsg = {
-      id: optimisticId,
+      id: messageId,
       text: body,
       sentAt: nowIso,
       fromMe: true,
@@ -540,7 +541,7 @@ const ChatDetailScreen: React.FC = () => {
     dispatch({ type: 'UPSERT_MESSAGE', message: optimisticMessage });
 
     try {
-      const { message, error } = await sendMessage(otherUserId, body);
+      const { message, error } = await sendMessage(otherUserId, body, messageId);
       if (error || !message) {
         throw error ?? new Error('Message failed to send');
       }
@@ -553,7 +554,7 @@ const ChatDetailScreen: React.FC = () => {
       console.error('[RT:Thread] Error sending message:', err);
       dispatch({
         type: 'UPDATE_MESSAGE',
-        id: optimisticId,
+        id: messageId,
         updates: { status: 'failed' },
       });
     }
@@ -573,7 +574,8 @@ const ChatDetailScreen: React.FC = () => {
       });
 
       try {
-        const { message: sentMessage, error } = await sendMessage(otherUserId, message.text);
+        const retryId = generateUUID();
+        const { message: sentMessage, error } = await sendMessage(otherUserId, message.text, retryId);
         if (error || !sentMessage) {
           throw error ?? new Error('Retry failed');
         }
