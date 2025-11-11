@@ -40,6 +40,7 @@ export class RealtimeManager {
   private retryCount = 0;
   private maxRetries = 4;
   private retryTimeout: ReturnType<typeof setTimeout> | null = null;
+  private lastStatus: ChannelStatus | null = null;
   private onPresenceSync?: (users: string[]) => void;
   private onTypingChange?: (event: TypingEvent) => void;
   private onBroadcastMessage?: (message: BroadcastMessage) => void;
@@ -69,7 +70,8 @@ export class RealtimeManager {
   ): Promise<void> {
     if (this.channel) {
       this.log('Channel already exists, cleaning up before resubscribe');
-      this.unsubscribe();
+      // Ensure we fully unsubscribe before creating a fresh channel to avoid race conditions
+      await this.unsubscribe();
     }
 
     this.log(`Subscribing to conversation: ${filter.otherUserId}`);
@@ -148,20 +150,24 @@ export class RealtimeManager {
           this.onPresenceSync(userIds);
         }
       })
-      .on('broadcast', { event: 'typing' }, (payload) => {
+      .on('broadcast', { event: 'typing' }, (payload: { payload?: unknown }) => {
         this.log('Received typing event', payload);
         if (this.onTypingChange && payload.payload) {
           this.onTypingChange(payload.payload as TypingEvent);
         }
       })
-      .on('broadcast', { event: 'message' }, (payload) => {
+      .on('broadcast', { event: 'message' }, (payload: { payload?: unknown }) => {
         this.log('Received broadcast message', payload);
         if (this.onBroadcastMessage && payload.payload) {
           this.onBroadcastMessage(payload.payload as BroadcastMessage);
         }
       })
       .subscribe(async (status: string) => {
-        this.log(`Channel status: ${status}`);
+        // Reduce noisy logs: only log status changes
+        if (status !== this.lastStatus) {
+          this.log(`Channel status: ${status}`);
+          this.lastStatus = status as ChannelStatus;
+        }
 
         if (status === 'SUBSCRIBED') {
           this.isSubscribed = true;
@@ -299,18 +305,26 @@ export class RealtimeManager {
       this.retryTimeout = null;
     }
 
-    if (this.channel) {
+    const channelToRemove = this.channel;
+    // Set internal state early to avoid races with resubscribe flows
+    this.channel = null;
+    this.isSubscribed = false;
+
+    if (channelToRemove) {
       this.log('Unsubscribing channel');
 
       try {
-        await this.channel.untrack();
+        await channelToRemove.untrack();
       } catch (error) {
-        this.log('Error untracking presence', error);
+        // Presence untrack can fail if not fully subscribed; swallow to avoid noisy logs
       }
 
-      supabase.removeChannel(this.channel);
-      this.channel = null;
-      this.isSubscribed = false;
+      try {
+        // Some versions call unsubscribe internally; wrap to avoid throwing when already unsubscribed
+        supabase.removeChannel(channelToRemove);
+      } catch {
+        // Swallow errors from removeChannel to prevent unhandled promise exceptions
+      }
     }
   }
 
