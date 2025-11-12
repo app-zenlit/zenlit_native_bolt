@@ -1,0 +1,120 @@
+[
+  {
+    "schema": "public",
+    "name": "profiles",
+    "rls_enabled": true,
+    "rows": 8,
+    "columns": [
+      { "name": "id", "data_type": "uuid", "format": "uuid", "options": ["updatable"], "default_value": "gen_random_uuid()" },
+      { "name": "display_name", "data_type": "text", "format": "text", "options": ["updatable"] },
+      { "name": "user_name", "data_type": "text", "format": "text", "options": ["updatable", "unique"], "check": "user_name ~ '^[a-z0-9._!@#$%^&*()+=\\-\\[\\]{}|;:,<>?/~`]+$'::text" },
+      { "name": "date_of_birth", "data_type": "date", "format": "date", "options": ["nullable", "updatable"] },
+      { "name": "gender", "data_type": "text", "format": "text", "options": ["nullable", "updatable"], "check": "gender = ANY (ARRAY['male'::text, 'female'::text, 'other'::text])" },
+      { "name": "email", "data_type": "text", "format": "text", "options": ["updatable", "unique"] },
+      { "name": "account_created_at", "data_type": "timestamp with time zone", "format": "timestamptz", "options": ["updatable"], "default_value": "now()" }
+    ],
+    "primary_keys": ["id"],
+    "foreign_key_constraints": [
+      { "name": "social_links_id_fkey", "source": "public.social_links.id", "target": "public.profiles.id" },
+      { "name": "posts_user_id_fkey", "source": "public.posts.user_id", "target": "public.profiles.id" },
+      { "name": "feedback_user_id_fkey_profiles", "source": "public.feedback.user_id", "target": "public.profiles.id" },
+      { "name": "locations_id_fkey", "source": "public.locations.id", "target": "public.profiles.id" },
+      { "name": "messages_sender_fkey", "source": "public.messages.sender_id", "target": "public.profiles.id" },
+      { "name": "messages_receiver_fkey", "source": "public.messages.receiver_id", "target": "public.profiles.id" }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "social_links",
+    "rls_enabled": true,
+    "rows": 8,
+    "columns": [
+      { "name": "id", "data_type": "uuid", "format": "uuid", "options": ["updatable"] },
+      { "name": "profile_pic_url", "data_type": "text", "format": "text", "options": ["nullable", "updatable"], "default_value": "'https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_1280.png'::text" },
+      { "name": "banner_url", "data_type": "text", "format": "text", "options": ["nullable", "updatable"], "default_value": "'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1200&q=60'::text" },
+      { "name": "bio", "data_type": "text", "format": "text", "options": ["nullable", "updatable"] },
+      { "name": "instagram", "data_type": "text", "format": "text", "options": ["nullable", "updatable"] },
+      { "name": "x_twitter", "data_type": "text", "format": "text", "options": ["nullable", "updatable"] },
+      { "name": "linkedin", "data_type": "text", "format": "text", "options": ["nullable", "updatable"] },
+      { "name": "created_at", "data_type": "timestamp with time zone", "format": "timestamptz", "options": ["updatable"], "default_value": "now()" },
+      { "name": "updated_at", "data_type": "timestamp with time zone", "format": "timestamptz", "options": ["updatable"], "default_value": "now()" }
+    ],
+    "primary_keys": ["id"],
+    "foreign_key_constraints": [
+      { "name": "social_links_id_fkey", "source": "public.social_links.id", "target": "public.profiles.id" }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "posts",
+    "rls_enabled": true,
+    "rows": 15,
+    "columns": [
+      { "name": "id", "data_type": "uuid", "format": "uuid", "options": ["updatable"], "default_value": "gen_random_uuid()" },
+      { "name": "user_id", "data_type": "uuid", "format": "uuid", "options": ["updatable"] },
+      { "name": "content", "data_type": "text", "format": "text", "options": ["updatable"] },
+      { "name": "image_url", "data_type": "text", "format": "text", "options": ["nullable", "updatable"] },
+      { "name": "created_at", "data_type": "timestamp with time zone", "format": "timestamptz", "options": ["updatable"], "default_value": "now()" },
+      { "name": "updated_at", "data_type": "timestamp with time zone", "format": "timestamptz", "options": ["updatable"], "default_value": "now()" }
+    ],
+    "primary_keys": ["id"],
+    "foreign_key_constraints": [
+      { "name": "posts_user_id_fkey", "source": "public.posts.user_id", "target": "public.profiles.id" }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "feedback",
+    "rls_enabled": true,
+    "rows": 2,
+    "columns": [
+      { "name": "id", "data_type": "uuid", "format": "uuid", "options": ["updatable"], "default_value": "gen_random_uuid()" },
+      { "name": "user_id", "data_type": "uuid", "format": "uuid", "options": ["updatable"] },
+      { "name": "message", "data_type": "text", "format": "text", "options": ["updatable"] },
+      { "name": "image_url", "data_type": "text", "format": "text", "options": ["nullable", "updatable"] },
+      { "name": "created_at", "data_type": "timestamp with time zone", "format": "timestamptz", "options": ["updatable"], "default_value": "now()" }
+    ],
+    "primary_keys": ["id"],
+    "foreign_key_constraints": [
+      { "name": "feedback_user_id_fkey_profiles", "source": "public.feedback.user_id", "target": "public.profiles.id" }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "locations",
+    "rls_enabled": true,
+    "rows": 8,
+    "columns": [
+      { "name": "id", "data_type": "uuid", "format": "uuid", "options": ["updatable"] },
+      { "name": "lat_full", "data_type": "numeric", "format": "numeric", "options": ["nullable", "updatable"] },
+      { "name": "long_full", "data_type": "numeric", "format": "numeric", "options": ["nullable", "updatable"] },
+      { "name": "lat_short", "data_type": "numeric", "format": "numeric", "options": ["nullable", "updatable"] },
+      { "name": "long_short", "data_type": "numeric", "format": "numeric", "options": ["nullable", "updatable"] },
+      { "name": "updated_at", "data_type": "timestamp with time zone", "format": "timestamptz", "options": ["updatable"], "default_value": "now()" }
+    ],
+    "primary_keys": ["id"],
+    "foreign_key_constraints": [
+      { "name": "locations_id_fkey", "source": "public.locations.id", "target": "public.profiles.id" }
+    ]
+  },
+  {
+    "schema": "public",
+    "name": "messages",
+    "rls_enabled": true,
+    "rows": 34,
+    "columns": [
+      { "name": "id", "data_type": "uuid", "format": "uuid", "options": ["updatable"], "default_value": "gen_random_uuid()" },
+      { "name": "sender_id", "data_type": "uuid", "format": "uuid", "options": ["updatable"] },
+      { "name": "text", "data_type": "text", "format": "text", "options": ["updatable"], "check": "length(TRIM(BOTH FROM text)) > 0" },
+      { "name": "created_at", "data_type": "timestamp with time zone", "format": "timestamptz", "options": ["nullable", "updatable"], "default_value": "now()" },
+      { "name": "delivered_at", "data_type": "timestamp with time zone", "format": "timestamptz", "options": ["nullable", "updatable"] },
+      { "name": "read_at", "data_type": "timestamp with time zone", "format": "timestamptz", "options": ["nullable", "updatable"] },
+      { "name": "receiver_id", "data_type": "uuid", "format": "uuid", "options": ["updatable"] }
+    ],
+    "primary_keys": ["id"],
+    "foreign_key_constraints": [
+      { "name": "messages_sender_fkey", "source": "public.messages.sender_id", "target": "public.profiles.id" },
+      { "name": "messages_receiver_fkey", "source": "public.messages.receiver_id", "target": "public.profiles.id" }
+    ]
+  }
+]

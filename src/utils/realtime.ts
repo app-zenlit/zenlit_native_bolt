@@ -91,7 +91,7 @@ export class RealtimeManager {
           },
         },
       })
-      .on('broadcast', { event: 'INSERT' }, (payload: any) => {
+      .on('broadcast', { event: 'INSERT' }, (payload: { payload?: any }) => {
         this.log('Received broadcast INSERT event', payload);
 
         const message = payload.payload;
@@ -112,7 +112,7 @@ export class RealtimeManager {
             schema: 'public',
             table: 'messages',
             commit_timestamp: new Date().toISOString(),
-            errors: null,
+            errors: [] as string[],
           } as RealtimePostgresChangesPayload<any>);
         } else {
           this.log('Message not for this conversation, ignoring');
@@ -149,13 +149,13 @@ export class RealtimeManager {
           this.onPresenceSync(userIds);
         }
       })
-      .on('broadcast', { event: 'typing' }, (payload) => {
+      .on('broadcast', { event: 'typing' }, (payload: { payload?: unknown }) => {
         this.log('Received typing event', payload);
         if (this.onTypingChange && payload.payload) {
           this.onTypingChange(payload.payload as TypingEvent);
         }
       })
-      .on('broadcast', { event: 'message' }, (payload) => {
+      .on('broadcast', { event: 'message' }, (payload: { payload?: unknown }) => {
         this.log('Received broadcast message', payload);
         if (this.onBroadcastMessage && payload.payload) {
           this.onBroadcastMessage(payload.payload as BroadcastMessage);
@@ -300,18 +300,27 @@ export class RealtimeManager {
       this.retryTimeout = null;
     }
 
-    if (this.channel) {
-      this.log('Unsubscribing channel');
+    const channel = this.channel;
+    if (!channel) {
+      return;
+    }
 
+    this.log('Unsubscribing channel');
+
+    // Early state reset to avoid races where this.channel becomes null
+    this.channel = null;
+    this.isSubscribed = false;
+
+    try {
       try {
-        await this.channel.untrack();
+        await channel.untrack();
       } catch (error) {
         this.log('Error untracking presence', error);
       }
 
-      supabase.removeChannel(this.channel);
-      this.channel = null;
-      this.isSubscribed = false;
+      await supabase.removeChannel(channel);
+    } catch (error) {
+      this.log('Error removing channel', error);
     }
   }
 
