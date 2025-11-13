@@ -1,5 +1,6 @@
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 import { createConversationChannel, type BroadcastMessage, type TypingEvent } from './realtime';
+import { logger } from './logger';
 import type { Message } from '../lib/types';
 
 export type ChatRealtimeHandlers = {
@@ -33,7 +34,7 @@ export function setupChatRealtime(config: ChatRealtimeConfig) {
 
   const manager = createConversationChannel(otherUserId, {
     onStatusChange: (status) => {
-      console.log(`[RT:Thread] Channel status changed: ${status}`);
+      logger.info('RT:Thread', `Channel status changed: ${status}`);
     },
   });
 

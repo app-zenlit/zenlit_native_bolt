@@ -35,6 +35,7 @@ import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 import { createConversationChannel, type BroadcastMessage, type TypingEvent } from '../../src/utils/realtime';
 import { setupChatRealtime } from '../../src/utils/chatRealtimeSetup';
 import { generateUUID } from '../../src/utils/uuid';
+import { logger } from '../../src/utils/logger';
 
 const FALLBACK_AVATAR = 'https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_1280.png';
 const BATCH_SIZE = 50;
@@ -228,16 +229,16 @@ const ChatDetailScreen: React.FC = () => {
         return () => {};
       }
 
-      console.log('[RT:Thread] Screen focused');
+      logger.debug('RT:Thread', 'Screen focused');
       setActiveConversation(otherUserId);
       hasMarkedReadRef.current = false;
 
       markThreadDelivered(otherUserId).catch((error) => {
-        console.error('[RT:Thread] Failed to mark messages delivered on focus', error);
+        logger.error('RT:Thread', 'Failed to mark messages delivered on focus', error);
       });
 
       return () => {
-        console.log('[RT:Thread] Screen blurred');
+        logger.debug('RT:Thread', 'Screen blurred');
         setActiveConversation(null);
         hasMarkedReadRef.current = false;
       };
@@ -282,7 +283,7 @@ const ChatDetailScreen: React.FC = () => {
   const processBatchedEvents = useCallback(() => {
     if (eventQueueRef.current.length === 0) return;
 
-    console.log(`[RT:Thread] Processing ${eventQueueRef.current.length} batched events`);
+    logger.debug('RT:Thread', `Processing ${eventQueueRef.current.length} batched events`);
     const events = [...eventQueueRef.current];
     eventQueueRef.current = [];
 
@@ -378,7 +379,7 @@ const ChatDetailScreen: React.FC = () => {
       return;
     }
 
-    console.log('[RT:Thread] Setting up realtime subscription');
+    logger.debug('RT:Thread', 'Setting up realtime subscription');
 
     const manager = setupChatRealtime({
       currentUserId,
@@ -390,9 +391,9 @@ const ChatDetailScreen: React.FC = () => {
             dispatch({ type: 'UPSERT_MESSAGE', message: mapped });
 
             if (message.sender_id === otherUserId && isAtBottomRef.current) {
-              console.log('[RT:Thread] New message from other user, marking as read (user at bottom)');
+              logger.debug('RT:Thread', 'New message from other user, marking as read (user at bottom)');
               markThreadRead(otherUserId).catch((err) =>
-                console.error('[RT:Thread] Failed to mark read', err)
+                logger.error('RT:Thread', 'Failed to mark read', err)
               );
               lastReadMessageIdRef.current = message.id;
               hasMarkedReadRef.current = true;
@@ -413,7 +414,7 @@ const ChatDetailScreen: React.FC = () => {
         onPresenceSync: handlePresenceSync,
         onTypingChange: handleTypingEvent,
         onBroadcastMessage: (message) => {
-          console.log('[RT:Thread] Received broadcast message', message);
+          logger.debug('RT:Thread', 'Received broadcast message', message);
         },
       },
     });
@@ -421,7 +422,7 @@ const ChatDetailScreen: React.FC = () => {
     realtimeManagerRef.current = manager;
 
     return () => {
-      console.log('[RT:Thread] Cleaning up realtime subscription');
+      logger.debug('RT:Thread', 'Cleaning up realtime subscription');
       manager.unsubscribe();
       realtimeManagerRef.current = null;
     };
@@ -430,7 +431,7 @@ const ChatDetailScreen: React.FC = () => {
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextAppState) => {
       if (nextAppState === 'active' && otherUserId && currentUserId) {
-        console.log('[RT:Thread] App became active, resubscribing');
+        logger.info('RT:Thread', 'App became active, resubscribing');
         if (realtimeManagerRef.current && !realtimeManagerRef.current.isActive()) {
           realtimeManagerRef.current.unsubscribe();
 
@@ -451,7 +452,7 @@ const ChatDetailScreen: React.FC = () => {
                 const raw = payload.new;
                 if (!isServerMessage(raw)) return;
 
-                console.log('[RT:Thread] Message status updated');
+                logger.debug('RT:Thread', 'Message status updated');
                 queueEvent(() => {
                   const mapped = mapServerMessage(raw);
                   dispatch({ type: 'UPSERT_MESSAGE', message: mapped });
@@ -492,7 +493,7 @@ const ChatDetailScreen: React.FC = () => {
       );
 
       if (profileError || !profile) {
-        console.error('[RT:Thread] Error loading profile:', profileError);
+        logger.error('RT:Thread', 'Error loading profile:', profileError);
       } else {
         setOtherUser(profile);
         setSocialLinks(social);
@@ -505,7 +506,7 @@ const ChatDetailScreen: React.FC = () => {
         );
 
         if (messagesError) {
-          console.error('[RT:Thread] Error loading messages:', messagesError);
+          logger.error('RT:Thread', 'Error loading messages:', messagesError);
         } else {
           const chatMessages = sortMessagesAsc(messagesData.map(mapServerMessage));
           dispatch({
@@ -531,7 +532,7 @@ const ChatDetailScreen: React.FC = () => {
     const oldest = state.messages[0]?.sentAt;
     if (!oldest) return;
 
-    console.log('[RT:Thread] Loading older messages');
+    logger.debug('RT:Thread', 'Loading older messages');
     dispatch({ type: 'SET_FETCHING_MORE', isFetchingMore: true });
     preAppendHeightRef.current = contentHeightRef.current;
     preAppendOffsetRef.current = scrollYRef.current;
@@ -544,7 +545,7 @@ const ChatDetailScreen: React.FC = () => {
     );
 
     if (error) {
-      console.error('[RT:Thread] Error loading older messages:', error);
+      logger.error('RT:Thread', 'Error loading older messages:', error);
     } else if (olderData.length > 0) {
       const olderAsc = sortMessagesAsc(olderData.map(mapServerMessage));
       dispatch({
@@ -616,7 +617,7 @@ const ChatDetailScreen: React.FC = () => {
         message: mapServerMessage(message),
       });
     } catch (err) {
-      console.error('[RT:Thread] Error sending message:', err);
+      logger.error('RT:Thread', 'Error sending message:', err);
       dispatch({
         type: 'UPDATE_MESSAGE',
         id: messageId,
@@ -650,7 +651,7 @@ const ChatDetailScreen: React.FC = () => {
           message: mapServerMessage(sentMessage),
         });
       } catch (err) {
-        console.error('[RT:Thread] Error retrying message send:', err);
+        logger.error('RT:Thread', 'Error retrying message send:', err);
         dispatch({
           type: 'UPDATE_MESSAGE',
           id: message.id,
@@ -751,9 +752,9 @@ const ChatDetailScreen: React.FC = () => {
               isAtBottomRef.current = y + height >= contentHeight - threshold;
 
               if (!programmaticScrollRef.current && !wasAtBottom && isAtBottomRef.current && !hasMarkedReadRef.current && otherUserId && initialScrollDoneRef.current) {
-                console.log('[RT:Thread] User scrolled to bottom, marking messages as read');
+                logger.debug('RT:Thread', 'User scrolled to bottom, marking messages as read');
                 markThreadRead(otherUserId).catch((err) =>
-                  console.error('[RT:Thread] Failed to mark read on scroll', err)
+                  logger.error('RT:Thread', 'Failed to mark read on scroll', err)
                 );
                 hasMarkedReadRef.current = true;
               }

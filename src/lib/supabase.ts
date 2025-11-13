@@ -1,4 +1,5 @@
 import 'react-native-url-polyfill/auto';
+import { logger } from '../utils/logger';
 import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -196,7 +197,7 @@ if (hasValidConfig) {
     });
     supabaseReady = true;
   } catch (err) {
-    console.error('[Supabase] Failed to initialize client:', err);
+    logger.error('Supabase', 'Failed to initialize client:', err);
     supabase = makeStub();
     supabaseReady = false;
   }
@@ -211,11 +212,11 @@ export { supabase, supabaseReady };
 if (supabaseReady) {
   supabase.auth.onAuthStateChange(async (event: string, session: any) => {
     if (event === 'TOKEN_REFRESHED') {
-      console.log('Token refreshed successfully');
+      logger.info('Supabase', 'Token refreshed successfully');
     } else if (event === 'SIGNED_OUT') {
       // Clear any stored session data
       await AsyncStorage.removeItem('supabase.auth.token');
-      console.log('User signed out, session cleared');
+      logger.info('Supabase', 'User signed out, session cleared');
     }
   });
 }
@@ -227,8 +228,8 @@ export const clearInvalidSession = async () => {
     if (supabaseReady) {
       await supabase.auth.signOut();
     }
-    console.log('Invalid session cleared');
+    logger.info('Supabase', 'Invalid session cleared');
   } catch (error) {
-    console.error('Error clearing session:', error);
+    logger.error('Supabase', 'Error clearing session:', error);
   }
 };

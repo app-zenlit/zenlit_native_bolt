@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { logger } from './logger';
 import type { RealtimeChannel, RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 
 type ChannelStatus = 'SUBSCRIBED' | 'TIMED_OUT' | 'CLOSED' | 'CHANNEL_ERROR';
@@ -50,7 +51,7 @@ export class RealtimeManager {
 
   private log(message: string, ...args: any[]) {
     const tag = this.config.logTag || 'RT:Chat';
-    console.log(`[${tag}] ${message}`, ...args);
+    logger.debug(tag, message, ...args);
   }
 
   private calculateBackoff(): number {
@@ -72,7 +73,7 @@ export class RealtimeManager {
       this.unsubscribe();
     }
 
-    this.log(`Subscribing to conversation with ${filter.otherUserId} on private channel chat:${filter.currentUserId}`);
+    logger.info(this.config.logTag || 'RT:Chat', `Subscribing to conversation with ${filter.otherUserId} on private channel chat:${filter.currentUserId}`);
 
     const { currentUserId, otherUserId } = filter;
 
@@ -162,7 +163,7 @@ export class RealtimeManager {
         }
       })
       .subscribe(async (status: string) => {
-        this.log(`Channel status: ${status}`);
+        logger.info(this.config.logTag || 'RT:Chat', `Channel status: ${status}`);
 
         if (status === 'SUBSCRIBED') {
           this.isSubscribed = true;
@@ -204,7 +205,7 @@ export class RealtimeManager {
     handler: MessageEventHandler
   ): void {
     if (!this.channel) {
-      this.log('Creating channel for location updates');
+      logger.info(this.config.logTag || 'RT:Chat', 'Creating channel for location updates');
       this.channel = supabase.channel(this.config.channelName);
     } else {
       this.log('Adding location updates to existing channel');
@@ -242,7 +243,7 @@ export class RealtimeManager {
 
     if (this.channel && !this.isSubscribed) {
       this.channel.subscribe((status: string) => {
-        this.log(`Location channel status: ${status}`);
+        logger.info(this.config.logTag || 'RT:Chat', `Location channel status: ${status}`);
         if (status === 'SUBSCRIBED') {
           this.isSubscribed = true;
         }
@@ -281,13 +282,13 @@ export class RealtimeManager {
     }
   ): void {
     if (this.retryCount >= this.maxRetries) {
-      this.log(`Max retries (${this.maxRetries}) reached, giving up`);
+      logger.warn(this.config.logTag || 'RT:Chat', `Max retries (${this.maxRetries}) reached, giving up`);
       return;
     }
 
     this.retryCount++;
     const backoff = this.calculateBackoff();
-    this.log(`Retry ${this.retryCount}/${this.maxRetries} in ${backoff}ms`);
+    logger.info(this.config.logTag || 'RT:Chat', `Retry ${this.retryCount}/${this.maxRetries} in ${backoff}ms`);
 
     this.retryTimeout = setTimeout(() => {
       this.subscribeToConversation(filter, handlers);
@@ -305,7 +306,7 @@ export class RealtimeManager {
       return;
     }
 
-    this.log('Unsubscribing channel');
+    logger.info(this.config.logTag || 'RT:Chat', 'Unsubscribing channel');
 
     // Early state reset to avoid races where this.channel becomes null
     this.channel = null;
@@ -315,12 +316,12 @@ export class RealtimeManager {
       try {
         await channel.untrack();
       } catch (error) {
-        this.log('Error untracking presence', error);
+        logger.warn(this.config.logTag || 'RT:Chat', 'Error untracking presence', error);
       }
 
       await supabase.removeChannel(channel);
     } catch (error) {
-      this.log('Error removing channel', error);
+      logger.warn(this.config.logTag || 'RT:Chat', 'Error removing channel', error);
     }
   }
 

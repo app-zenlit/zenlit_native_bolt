@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useReducer, useRef, useState } from 'react';
+import { logger } from '../../src/utils/logger';
 import { ActivityIndicator, AppState, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 
@@ -71,7 +72,7 @@ function threadsReducer(state: ThreadsState, action: ThreadsAction): ThreadsStat
       );
 
       if (threadIndex === -1) {
-        console.log('[RT:List] Message from new conversation partner, fetching thread data');
+        logger.info('RT:List', 'Message from new conversation partner, fetching thread data');
         return state;
       }
 
@@ -161,7 +162,7 @@ const MessagesScreen: React.FC = () => {
   const processBatchedEvents = useCallback(() => {
     if (eventQueueRef.current.length === 0) return;
 
-    console.log(`[RT:List] Processing ${eventQueueRef.current.length} batched events`);
+    logger.debug('RT:List', `Processing ${eventQueueRef.current.length} batched events`);
     const events = [...eventQueueRef.current];
     eventQueueRef.current = [];
 
@@ -193,7 +194,7 @@ const MessagesScreen: React.FC = () => {
         const { threads: threadsData, error } = await getUserMessageThreads();
         if (error) {
           if (error.message !== 'Not authenticated') {
-            console.error('[RT:List] Error loading threads:', error);
+            logger.error('RT:List', 'Error loading threads:', error);
           }
           dispatch({ type: 'SET_THREADS', threads: [] });
           return;
@@ -206,10 +207,10 @@ const MessagesScreen: React.FC = () => {
         }
 
         refreshUnread().catch((err) => {
-          console.error('[RT:List] Failed to refresh unread counts', err);
+          logger.error('RT:List', 'Failed to refresh unread counts', err);
         });
       } catch (error) {
-        console.error('[RT:List] Exception loading threads:', error);
+        logger.error('RT:List', 'Exception loading threads:', error);
         if (showSpinner) {
           dispatch({ type: 'SET_LOADING', loading: false });
         }
@@ -228,7 +229,7 @@ const MessagesScreen: React.FC = () => {
   useEffect(() => {
     if (!currentUserId) return;
 
-    console.log('[RT:List] Setting up message realtime subscription');
+    logger.debug('RT:List', 'Setting up message realtime subscription');
 
     const handleMessageEvent = async (payload: RealtimePostgresChangesPayload<any>) => {
       const messageData = payload.new as Message;
@@ -240,7 +241,7 @@ const MessagesScreen: React.FC = () => {
       const existingThread = state.threads.find((t) => t.other_user_id === otherUserId);
 
       if (!existingThread && !newConversationCheckRef.current.has(otherUserId)) {
-        console.log('[RT:List] New conversation detected, fetching threads silently');
+        logger.debug('RT:List', 'New conversation detected, fetching threads silently');
         newConversationCheckRef.current.add(otherUserId);
 
         setTimeout(async () => {
@@ -251,7 +252,7 @@ const MessagesScreen: React.FC = () => {
           newConversationCheckRef.current.delete(otherUserId);
         }, 500);
       } else {
-        console.log('[RT:List] New message event, updating thread silently');
+        logger.debug('RT:List', 'New message event, updating thread silently');
         queueEvent(() => {
           dispatch({
             type: 'UPDATE_THREAD_MESSAGE',
@@ -315,12 +316,12 @@ const MessagesScreen: React.FC = () => {
         }
       )
       .subscribe((status: string) => {
-        console.log(`[RT:List] Messages channel status: ${status}`);
+        logger.info('RT:List', `Messages channel status: ${status}`);
       });
 
     return () => {
       if (channelRef.current) {
-        console.log('[RT:List] Cleaning up message subscription');
+        logger.debug('RT:List', 'Cleaning up message subscription');
         supabase.removeChannel(channelRef.current);
         channelRef.current = null;
       }
@@ -330,13 +331,13 @@ const MessagesScreen: React.FC = () => {
   useEffect(() => {
     if (!currentUserId || state.threads.length === 0) return;
 
-    console.log('[RT:List] Setting up location realtime subscription');
+    logger.debug('RT:List', 'Setting up location realtime subscription');
 
     const conversationPartnerIds = state.threads.map((t) => t.other_user_id);
 
     const handleLocationUpdate = async (otherUserId: string) => {
       const { isNearby } = await isUserNearby(otherUserId);
-      console.log('[RT:List] Location update, updating anonymity silently');
+      logger.debug('RT:List', 'Location update, updating anonymity silently');
       queueEvent(() => {
         dispatch({
           type: 'UPDATE_THREAD_ANONYMITY',
@@ -359,12 +360,12 @@ const MessagesScreen: React.FC = () => {
         }
       )
       .subscribe((status: string) => {
-        console.log(`[RT:List] Location channel status: ${status}`);
+        logger.info('RT:List', `Location channel status: ${status}`);
       });
 
     return () => {
       if (locationChannelRef.current) {
-        console.log('[RT:List] Cleaning up location subscription');
+        logger.debug('RT:List', 'Cleaning up location subscription');
         supabase.removeChannel(locationChannelRef.current);
         locationChannelRef.current = null;
       }
@@ -374,7 +375,7 @@ const MessagesScreen: React.FC = () => {
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextAppState) => {
       if (nextAppState === 'active') {
-        console.log('[RT:List] App became active, reloading threads silently');
+        logger.info('RT:List', 'App became active, reloading threads silently');
         loadThreads(false);
       }
     });

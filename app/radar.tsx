@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { logger } from '../src/utils/logger';
 import {
   ActivityIndicator,
   FlatList,
@@ -175,7 +176,7 @@ const RadarScreen: React.FC = () => {
   useEffect(() => {
     if (!isVisible || locationPermissionDenied) {
       if (realtimeChannelRef.current) {
-        console.log('[RT:Radar] Cleaning up realtime subscription (visibility off or permission denied)');
+        logger.debug('RT:Radar', 'Cleaning up realtime subscription (visibility off or permission denied)');
         supabase.removeChannel(realtimeChannelRef.current);
         realtimeChannelRef.current = null;
       }
@@ -186,7 +187,7 @@ const RadarScreen: React.FC = () => {
       return;
     }
 
-    console.log('[RT:Radar] Setting up location realtime subscription');
+    logger.debug('RT:Radar', 'Setting up location realtime subscription');
 
     const handleLocationChange = () => {
       if (realtimeDebounceTimerRef.current) {
@@ -194,7 +195,7 @@ const RadarScreen: React.FC = () => {
       }
 
       realtimeDebounceTimerRef.current = setTimeout(() => {
-        console.log('[RT:Radar] Location change detected, refreshing nearby users silently');
+        logger.debug('RT:Radar', 'Location change detected, refreshing nearby users silently');
         loadNearbyUsers(false);
       }, REALTIME_DEBOUNCE_DELAY);
     };
@@ -209,7 +210,7 @@ const RadarScreen: React.FC = () => {
           table: 'locations',
         },
         (payload: RealtimePostgresChangesPayload<any>) => {
-          console.log('[RT:Radar] Location INSERT event received');
+          logger.debug('RT:Radar', 'Location INSERT event received');
           handleLocationChange();
         }
       )
@@ -221,17 +222,17 @@ const RadarScreen: React.FC = () => {
           table: 'locations',
         },
         (payload: RealtimePostgresChangesPayload<any>) => {
-          console.log('[RT:Radar] Location UPDATE event received');
+          logger.debug('RT:Radar', 'Location UPDATE event received');
           handleLocationChange();
         }
       )
       .subscribe((status: string) => {
-        console.log(`[RT:Radar] Location channel status: ${status}`);
+        logger.info('RT:Radar', `Location channel status: ${status}`);
       });
 
     return () => {
       if (realtimeChannelRef.current) {
-        console.log('[RT:Radar] Cleaning up realtime subscription');
+        logger.debug('RT:Radar', 'Cleaning up realtime subscription');
         supabase.removeChannel(realtimeChannelRef.current);
         realtimeChannelRef.current = null;
       }
