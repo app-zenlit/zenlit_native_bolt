@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 
 import { AppHeader } from '../src/components/AppHeader';
 import { SocialProfileCard } from '../src/components/SocialProfileCard';
@@ -16,8 +17,10 @@ import VisibilitySheet from '../src/components/VisibilitySheet';
 import { useVisibility } from '../src/contexts/VisibilityContext';
 import { theme } from '../src/styles/theme';
 import { getNearbyUsers, type NearbyUserData } from '../src/services';
+import { supabase } from '../src/lib/supabase';
 
-const DEBOUNCE_DELAY = 120;
+const SEARCH_DEBOUNCE_DELAY = 120;
+const REALTIME_DEBOUNCE_DELAY = 500;
 
 type SearchableUser = {
   user: NearbyUserData;
@@ -37,17 +40,24 @@ const RadarScreen: React.FC = () => {
   const [nearbyUsers, setNearbyUsers] = useState<NearbyUserData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [hasNewUsers, setHasNewUsers] = useState(false);
   const inputRef = useRef<TextInput>(null);
+  const realtimeChannelRef = useRef<any>(null);
+  const realtimeDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const previousUserIdsRef = useRef<Set<string>>(new Set());
 
-  const loadNearbyUsers = useCallback(async () => {
+  const loadNearbyUsers = useCallback(async (showSpinner = true) => {
     if (!isVisible || locationPermissionDenied) {
       setNearbyUsers([]);
       setLoading(false);
       setError(null);
+      setHasNewUsers(false);
       return;
     }
 
-    setLoading(true);
+    if (showSpinner) {
+      setLoading(true);
+    }
     setError(null);
 
     const { users, error: fetchError } = await getNearbyUsers();
@@ -55,7 +65,17 @@ const RadarScreen: React.FC = () => {
     if (fetchError) {
       setError(fetchError.message);
       setNearbyUsers([]);
+      setHasNewUsers(false);
     } else {
+      const currentUserIds = new Set(users.map(u => u.id));
+      const previousUserIds = previousUserIdsRef.current;
+
+      const hasNew = users.some(u => !previousUserIds.has(u.id));
+      if (hasNew && previousUserIds.size > 0) {
+        setHasNewUsers(true);
+      }
+
+      previousUserIdsRef.current = currentUserIds;
       setNearbyUsers(users);
     }
 
@@ -63,7 +83,7 @@ const RadarScreen: React.FC = () => {
   }, [isVisible, locationPermissionDenied]);
 
   useEffect(() => {
-    loadNearbyUsers();
+    loadNearbyUsers(true);
   }, [loadNearbyUsers]);
 
   const searchableUsers = useMemo<SearchableUser[]>(
@@ -81,7 +101,7 @@ const RadarScreen: React.FC = () => {
     const trimmed = query.trim();
     const timer = setTimeout(() => {
       setDebouncedQuery(trimmed);
-    }, DEBOUNCE_DELAY);
+    }, SEARCH_DEBOUNCE_DELAY);
 
     return () => {
       clearTimeout(timer);
@@ -144,13 +164,91 @@ const RadarScreen: React.FC = () => {
     setSheetVisible(true);
   }, [closeSearch, isSearchOpen]);
 
+  const handleTitlePress = useCallback(() => {
+    loadNearbyUsers(true);
+  }, [loadNearbyUsers]);
+
+  const dismissNewUsersHint = useCallback(() => {
+    setHasNewUsers(false);
+  }, []);
+
+  useEffect(() => {
+    if (!isVisible || locationPermissionDenied) {
+      if (realtimeChannelRef.current) {
+        console.log('[RT:Radar] Cleaning up realtime subscription (visibility off or permission denied)');
+        supabase.removeChannel(realtimeChannelRef.current);
+        realtimeChannelRef.current = null;
+      }
+      if (realtimeDebounceTimerRef.current) {
+        clearTimeout(realtimeDebounceTimerRef.current);
+        realtimeDebounceTimerRef.current = null;
+      }
+      return;
+    }
+
+    console.log('[RT:Radar] Setting up location realtime subscription');
+
+    const handleLocationChange = () => {
+      if (realtimeDebounceTimerRef.current) {
+        clearTimeout(realtimeDebounceTimerRef.current);
+      }
+
+      realtimeDebounceTimerRef.current = setTimeout(() => {
+        console.log('[RT:Radar] Location change detected, refreshing nearby users silently');
+        loadNearbyUsers(false);
+      }, REALTIME_DEBOUNCE_DELAY);
+    };
+
+    realtimeChannelRef.current = supabase
+      .channel('radar-location-updates')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'locations',
+        },
+        (payload: RealtimePostgresChangesPayload<any>) => {
+          console.log('[RT:Radar] Location INSERT event received');
+          handleLocationChange();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'locations',
+        },
+        (payload: RealtimePostgresChangesPayload<any>) => {
+          console.log('[RT:Radar] Location UPDATE event received');
+          handleLocationChange();
+        }
+      )
+      .subscribe((status: string) => {
+        console.log(`[RT:Radar] Location channel status: ${status}`);
+      });
+
+    return () => {
+      if (realtimeChannelRef.current) {
+        console.log('[RT:Radar] Cleaning up realtime subscription');
+        supabase.removeChannel(realtimeChannelRef.current);
+        realtimeChannelRef.current = null;
+      }
+      if (realtimeDebounceTimerRef.current) {
+        clearTimeout(realtimeDebounceTimerRef.current);
+        realtimeDebounceTimerRef.current = null;
+      }
+    };
+  }, [isVisible, locationPermissionDenied, loadNearbyUsers]);
+
   return (
     <View style={styles.root}>
       <StatusBar barStyle="light-content" backgroundColor="#000000" />
 
       <AppHeader
         title="Radar"
-        onTitlePress={loadNearbyUsers}
+        onTitlePress={handleTitlePress}
         onToggleSearch={handleToggleSearch}
         isSearchActive={isSearchOpen}
         onOpenVisibility={handleOpenVisibility}
@@ -171,6 +269,19 @@ const RadarScreen: React.FC = () => {
             spellCheck={false}
             keyboardAppearance="dark"
           />
+        </View>
+      ) : null}
+
+      {hasNewUsers && !isSearchOpen && isVisible && !locationPermissionDenied && !loading && !error ? (
+        <View style={styles.newUsersHint}>
+          <Text style={styles.newUsersText}>New people nearby</Text>
+          <Text
+            style={styles.dismissHint}
+            onPress={dismissNewUsersHint}
+            accessibilityLabel="Dismiss notification"
+          >
+            Dismiss
+          </Text>
         </View>
       ) : null}
 
@@ -313,6 +424,30 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: 6,
     textAlign: 'center',
+  },
+  newUsersHint: {
+    marginHorizontal: theme.spacing.lg,
+    marginBottom: theme.spacing.sm,
+    paddingVertical: 10,
+    paddingHorizontal: theme.spacing.md,
+    backgroundColor: 'rgba(96, 165, 250, 0.15)',
+    borderRadius: theme.radii.md,
+    borderWidth: 1,
+    borderColor: 'rgba(96, 165, 250, 0.3)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  newUsersText: {
+    color: '#60a5fa',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  dismissHint: {
+    color: '#60a5fa',
+    fontSize: 13,
+    fontWeight: '400',
+    opacity: 0.8,
   },
 });
 
