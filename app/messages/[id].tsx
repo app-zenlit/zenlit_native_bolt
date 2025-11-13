@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   AppState,
   FlatList,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   StatusBar,
@@ -159,6 +160,8 @@ const ChatDetailScreen: React.FC = () => {
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [isOnline, setIsOnline] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
+  const [composerHeight, setComposerHeight] = useState(72);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [state, dispatch] = useReducer(messagesReducer, {
@@ -180,6 +183,9 @@ const ChatDetailScreen: React.FC = () => {
   const isAtBottomRef = useRef(true);
   const lastReadMessageIdRef = useRef<string | null>(null);
   const hasMarkedReadRef = useRef(false);
+  const initialScrollDoneRef = useRef(false);
+  const hasMountedRef = useRef(false);
+  const programmaticScrollRef = useRef(false);
 
   const mapServerMessage = useCallback(
     (msg: Message): ChatMsg => {
@@ -299,23 +305,73 @@ const ChatDetailScreen: React.FC = () => {
   );
 
   useEffect(() => {
-    const timeout = setTimeout(() => {
-      listRef.current?.scrollToEnd({ animated: false });
-    }, 0);
-    return () => clearTimeout(timeout);
+    const keyboardDidShowListener = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      () => {
+        setIsKeyboardVisible(true);
+        if (isAtBottomRef.current && hasMountedRef.current) {
+          setTimeout(() => {
+            programmaticScrollRef.current = true;
+            listRef.current?.scrollToEnd({ animated: true });
+            setTimeout(() => {
+              programmaticScrollRef.current = false;
+            }, 300);
+          }, 100);
+        }
+      }
+    );
+
+    const keyboardDidHideListener = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => {
+        setIsKeyboardVisible(false);
+      }
+    );
+
+    return () => {
+      keyboardDidShowListener.remove();
+      keyboardDidHideListener.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!otherUserId) return;
+
+    initialScrollDoneRef.current = false;
+    hasMountedRef.current = false;
+    hasMarkedReadRef.current = false;
   }, [otherUserId]);
 
   useEffect(() => {
     if (prependingRef.current) {
       return;
     }
-    if (isAtBottomRef.current && state.messages.length > 0) {
+
+    if (!initialScrollDoneRef.current && state.messages.length > 0 && !loading && contentHeightRef.current > 0) {
       const timeout = setTimeout(() => {
+        programmaticScrollRef.current = true;
         listRef.current?.scrollToEnd({ animated: true });
+        initialScrollDoneRef.current = true;
+        hasMountedRef.current = true;
+        isAtBottomRef.current = true;
+        setTimeout(() => {
+          programmaticScrollRef.current = false;
+        }, 300);
+      }, 150);
+      return () => clearTimeout(timeout);
+    }
+
+    if (initialScrollDoneRef.current && isAtBottomRef.current && state.messages.length > 0) {
+      const timeout = setTimeout(() => {
+        programmaticScrollRef.current = true;
+        listRef.current?.scrollToEnd({ animated: true });
+        setTimeout(() => {
+          programmaticScrollRef.current = false;
+        }, 300);
       }, 100);
       return () => clearTimeout(timeout);
     }
-  }, [state.messages.length]);
+  }, [state.messages.length, loading]);
 
   useEffect(() => {
     if (!otherUserId || !currentUserId) {
@@ -540,6 +596,15 @@ const ChatDetailScreen: React.FC = () => {
 
     dispatch({ type: 'UPSERT_MESSAGE', message: optimisticMessage });
 
+    isAtBottomRef.current = true;
+    setTimeout(() => {
+      programmaticScrollRef.current = true;
+      listRef.current?.scrollToEnd({ animated: true });
+      setTimeout(() => {
+        programmaticScrollRef.current = false;
+      }, 300);
+    }, 50);
+
     try {
       const { message, error } = await sendMessage(otherUserId, body, messageId);
       if (error || !message) {
@@ -669,7 +734,10 @@ const ChatDetailScreen: React.FC = () => {
                 />
               );
             }}
-            contentContainerStyle={styles.listContent}
+            contentContainerStyle={[
+              styles.listContent,
+              { paddingBottom: composerHeight + 12 }
+            ]}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
             onScroll={(e) => {
@@ -679,9 +747,10 @@ const ChatDetailScreen: React.FC = () => {
 
               scrollYRef.current = y;
               const wasAtBottom = isAtBottomRef.current;
-              isAtBottomRef.current = y + height >= contentHeight - 20;
+              const threshold = contentHeight > height ? 20 : 0;
+              isAtBottomRef.current = y + height >= contentHeight - threshold;
 
-              if (!wasAtBottom && isAtBottomRef.current && !hasMarkedReadRef.current && otherUserId) {
+              if (!programmaticScrollRef.current && !wasAtBottom && isAtBottomRef.current && !hasMarkedReadRef.current && otherUserId && initialScrollDoneRef.current) {
                 console.log('[RT:Thread] User scrolled to bottom, marking messages as read');
                 markThreadRead(otherUserId).catch((err) =>
                   console.error('[RT:Thread] Failed to mark read on scroll', err)
@@ -690,7 +759,7 @@ const ChatDetailScreen: React.FC = () => {
               }
 
               const TOP_THRESHOLD = 24;
-              if (y <= TOP_THRESHOLD) {
+              if (y <= TOP_THRESHOLD && !prependingRef.current) {
                 loadOlder();
               }
             }}
@@ -721,7 +790,16 @@ const ChatDetailScreen: React.FC = () => {
               ) : null
             }
           />
-          <SafeAreaView edges={['bottom']} style={styles.composerWrapper}>
+          <SafeAreaView
+            edges={['bottom']}
+            style={styles.composerWrapper}
+            onLayout={(e) => {
+              const height = e.nativeEvent.layout.height;
+              if (height > 0 && Math.abs(height - composerHeight) > 2) {
+                setComposerHeight(height);
+              }
+            }}
+          >
             <Composer onSend={handleSend} disabled={isAnonymous} onTypingChange={handleTypingChange} />
           </SafeAreaView>
         </View>
@@ -760,7 +838,6 @@ const styles = StyleSheet.create({
   listContent: {
     paddingHorizontal: 20,
     paddingTop: 16,
-    paddingBottom: 72,
     gap: 4,
   },
   composerWrapper: {
