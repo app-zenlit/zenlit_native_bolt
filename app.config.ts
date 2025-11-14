@@ -6,10 +6,23 @@ import { ConfigContext, ExpoConfig } from "expo/config";
 const uniqueSchemes = (schemes: Array<string | undefined>): string[] =>
   Array.from(new Set((schemes.filter(Boolean) as string[])));
 
+type PluginConfig = NonNullable<ExpoConfig["plugins"]>[number];
+
 export default ({ config }: ConfigContext): ExpoConfig => {
   const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
   // Google OAuth configuration removed
+
+  const buildPropertiesPluginConfig: PluginConfig = [
+    "expo-build-properties",
+    {
+      android: {
+        compileSdkVersion: 35,
+        targetSdkVersion: 35,
+        buildToolsVersion: "35.0.0",
+      },
+    },
+  ];
 
   // Ensure redirectScheme is a string, even if config.scheme is an array
   const configSchemeString = Array.isArray(config.scheme)
@@ -32,6 +45,25 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     ...configSchemesArray,
     ...existingInfoPlistSchemes,
   ]);
+
+  const existingPlugins = config.plugins ?? [];
+  const hasBuildPropertiesPlugin = existingPlugins.some((plugin) => {
+    if (typeof plugin === "string") {
+      return plugin === "expo-build-properties";
+    }
+    return Array.isArray(plugin) && plugin[0] === "expo-build-properties";
+  });
+  const mergedPlugins = hasBuildPropertiesPlugin
+    ? existingPlugins.map((plugin) => {
+        if (
+          (typeof plugin === "string" && plugin === "expo-build-properties") ||
+          (Array.isArray(plugin) && plugin[0] === "expo-build-properties")
+        ) {
+          return buildPropertiesPluginConfig;
+        }
+        return plugin;
+      })
+    : [...existingPlugins, buildPropertiesPluginConfig];
 
   const result: ExpoConfig = {
     ...config,
@@ -59,6 +91,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     runtimeVersion: {
       policy: "sdkVersion",
     },
+    plugins: mergedPlugins,
     extra: {
       ...(config.extra ?? {}),
       supabaseUrl,
