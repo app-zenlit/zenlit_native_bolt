@@ -214,8 +214,6 @@ if (supabaseReady) {
     if (event === 'TOKEN_REFRESHED') {
       logger.info('Supabase', 'Token refreshed successfully');
     } else if (event === 'SIGNED_OUT') {
-      // Clear any stored session data
-      await AsyncStorage.removeItem('supabase.auth.token');
       logger.info('Supabase', 'User signed out, session cleared');
     }
   });
@@ -224,9 +222,13 @@ if (supabaseReady) {
 // Function to clear invalid session data
 export const clearInvalidSession = async () => {
   try {
-    await AsyncStorage.removeItem('supabase.auth.token');
     if (supabaseReady) {
-      await supabase.auth.signOut();
+      const { data } = await supabase.auth.getSession();
+      if (data?.session) {
+        try {
+          await supabase.auth.signOut({ scope: 'global' });
+        } catch {}
+      }
     }
     logger.info('Supabase', 'Invalid session cleared');
   } catch (error) {
