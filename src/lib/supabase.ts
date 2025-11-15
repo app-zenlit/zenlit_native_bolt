@@ -1,9 +1,8 @@
-import 'react-native-url-polyfill/auto';
 import { logger } from '../utils/logger';
 import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
 
-// Safely read environment values across web/native and guard against invalid strings
 const readEnv = (key: string): string | undefined => {
   const val = (process.env as any)?.[key] ?? (globalThis as any)?.[key];
   if (typeof val !== 'string') return undefined;
@@ -12,8 +11,27 @@ const readEnv = (key: string): string | undefined => {
   return trimmed;
 };
 
-const envUrl = readEnv('EXPO_PUBLIC_SUPABASE_URL');
-const envAnon = readEnv('EXPO_PUBLIC_SUPABASE_ANON_KEY');
+const getSupabaseConfig = (): { url?: string; anonKey?: string; source: string } => {
+  let url = readEnv('EXPO_PUBLIC_SUPABASE_URL');
+  let anonKey = readEnv('EXPO_PUBLIC_SUPABASE_ANON_KEY');
+  let source = 'process.env';
+
+  if (!url || !anonKey) {
+    url = Constants.expoConfig?.extra?.supabaseUrl;
+    anonKey = Constants.expoConfig?.extra?.supabaseAnonKey;
+    source = 'Constants.expoConfig.extra';
+  }
+
+  if (!url || !anonKey) {
+    url = (Constants as any).manifest?.extra?.supabaseUrl;
+    anonKey = (Constants as any).manifest?.extra?.supabaseAnonKey;
+    source = 'Constants.manifest.extra';
+  }
+
+  return { url, anonKey, source };
+};
+
+const { url: envUrl, anonKey: envAnon, source: configSource } = getSupabaseConfig();
 
 const isValidHttpUrl = (url?: string): boolean => {
   if (!url) return false;
@@ -57,17 +75,21 @@ const isLikelySupabaseUrl = (url?: string): boolean => {
 
 const hasValidConfig = isLikelySupabaseUrl(envUrl) && !!envAnon;
 
-// Instrumentation to help diagnose environment issues in preview
+const cryptoAvailable = typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function';
+const urlAvailable = typeof URL !== 'undefined';
+
 (() => {
   const meta = {
-    envUrl,
-    envAnonPresent: !!envAnon,
+    configSource,
+    url: envUrl ? `${envUrl.substring(0, 30)}...` : 'missing',
+    anonKeyPrefix: envAnon ? `${envAnon.substring(0, 20)}...` : 'missing',
     parsedUrlOk: isValidHttpUrl(envUrl),
     looksLikeSupabaseUrl: isLikelySupabaseUrl(envUrl),
+    cryptoAvailable,
+    urlAvailable,
     ready: hasValidConfig,
   };
-  // Use console.info to avoid red error logs but provide visibility
-  console.info('[Supabase Init]', meta);
+  logger.info('Supabase', 'Initialization config', meta);
 })();
 
 // Create client with defensive try/catch; fall back to safe stub if creation fails
@@ -75,7 +97,7 @@ let supabase: any;
 let supabaseReady = false;
 
 const makeStub = () => {
-  console.warn('[Supabase] Not configured or failed to initialize. Running in preview-safe mode without backend.');
+  logger.warn('Supabase', 'Not configured or failed to initialize. Running in stub mode without backend.');
   const unsupported = (method?: string) => {
     const err = new Error(`[Supabase] Not configured. ${method ? method + ' is unavailable in preview-safe mode.' : 'Backend unavailable.'}`);
     return Promise.reject(err);
@@ -206,7 +228,7 @@ if (hasValidConfig) {
   supabaseReady = false;
 }
 
-export { supabase, supabaseReady };
+export { supabase, supabaseReady, getSupabaseConfig };
 
 // Handle auth state changes only when real client exists
 if (supabaseReady) {
