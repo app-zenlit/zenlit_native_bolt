@@ -19,7 +19,8 @@ import { useRouter } from 'expo-router';
 
 import { createShadowStyle } from '../../src/utils/shadow';
 import GradientTitle from '../../src/components/GradientTitle';
-import { supabase } from '../../src/lib/supabase';
+import { supabase, supabaseReady } from '../../src/lib/supabase';
+import { logger } from '../../src/utils/logger';
 
 const PRIMARY_GRADIENT = ['#2563eb', '#7e22ce'] as const;
 const DIVIDER_LINE_COLORS = [
@@ -82,10 +83,20 @@ const AuthScreen: React.FC = () => {
     if (!isValidEmail || emailLoading) {
       return;
     }
+
+    if (!supabaseReady) {
+      logger.error('Auth', 'Supabase not configured', { supabaseReady });
+      Alert.alert('Configuration Error', 'Authentication service is not properly configured. Please contact support.');
+      return;
+    }
+
+    const maskedEmail = email.trim().replace(/(.{2})(.*)(@.*)/, '$1***$3');
+    logger.info('Auth', 'Attempting OTP signin', { email: maskedEmail });
+
     setEmailLoading(true);
 
     try {
-      const { error } = await supabase.auth.signInWithOtp({
+      const { data, error } = await supabase.auth.signInWithOtp({
         email: email.trim(),
         options: {
           shouldCreateUser: true,
@@ -93,14 +104,49 @@ const AuthScreen: React.FC = () => {
       });
 
       if (error) {
-        Alert.alert('Error', error.message);
+        logger.error('Auth', 'OTP signin failed', {
+          email: maskedEmail,
+          errorName: error.name,
+          errorMessage: error.message,
+          errorStatus: (error as any).status,
+        });
+
+        let userMessage = error.message;
+
+        if (error.message.includes('Signups not allowed')) {
+          userMessage = 'New account creation is currently disabled. Please contact support if you need access.';
+        } else if (error.message.includes('Invalid email')) {
+          userMessage = 'Please enter a valid email address.';
+        } else if (error.message.includes('rate limit') || error.message.includes('too many requests')) {
+          userMessage = 'Too many attempts. Please wait a few minutes before trying again.';
+        } else if (error.message.includes('network') || error.message.includes('fetch')) {
+          userMessage = 'Unable to connect to authentication service. Please check your internet connection.';
+        }
+
+        Alert.alert('Authentication Error', userMessage);
         setEmailLoading(false);
         return;
       }
 
+      logger.info('Auth', 'OTP request successful', { email: maskedEmail });
       router.push(`/auth/verify-otp?email=${encodeURIComponent(email.trim())}`);
-    } catch (error) {
-      Alert.alert('Error', 'Something went wrong. Please try again.');
+    } catch (error: any) {
+      logger.error('Auth', 'OTP signin exception', {
+        email: maskedEmail,
+        error: error?.message || String(error),
+        stack: error?.stack,
+      });
+
+      const errorMessage = error?.message || 'Something went wrong';
+      let userMessage = 'Unable to send verification code. Please try again.';
+
+      if (errorMessage.includes('Not configured')) {
+        userMessage = 'Authentication service is not properly configured. Please contact support.';
+      } else if (errorMessage.includes('network') || errorMessage.includes('fetch')) {
+        userMessage = 'Unable to connect. Please check your internet connection and try again.';
+      }
+
+      Alert.alert('Error', userMessage);
       setEmailLoading(false);
     }
   };

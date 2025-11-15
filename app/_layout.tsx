@@ -1,3 +1,4 @@
+import '../src/polyfills';
 import '../src/utils/applyWebShadowPatch';
 
 import React, { useEffect, useState } from 'react';
@@ -11,9 +12,10 @@ import { Inter_500Medium } from '@expo-google-fonts/inter';
 import { VisibilityProvider } from '../src/contexts/VisibilityContext';
 import { MessagingProvider } from '../src/contexts/MessagingContext';
 import { theme } from '../src/styles/theme';
-import { supabase, clearInvalidSession } from '../src/lib/supabase';
+import { supabase, clearInvalidSession, supabaseReady } from '../src/lib/supabase';
 import Navigation from '../src/components/Navigation';
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
+import { logger } from '../src/utils/logger';
 
 const RootLayout: React.FC = () => {
   const pathname = usePathname();
@@ -30,17 +32,24 @@ const RootLayout: React.FC = () => {
   }, [pathname]);
 
   useEffect(() => {
-    // Handle auth errors globally
+    logger.info('App', 'RootLayout mounted', { supabaseReady });
+
     const handleAuthError = async () => {
       try {
+        if (!supabaseReady) {
+          logger.warn('App', 'Supabase not ready, skipping session check');
+          return;
+        }
+
         const { data: { session }, error } = await supabase.auth.getSession();
         if (error && error.message.includes('refresh_token_not_found')) {
-          console.log('Invalid refresh token detected, clearing session');
+          logger.info('Auth', 'Invalid refresh token detected, clearing session');
           await clearInvalidSession();
         }
         setIsAuthenticated(!!session);
+        logger.info('Auth', 'Initial session check complete', { hasSession: !!session });
       } catch (err) {
-        console.error('Error checking session:', err);
+        logger.error('Auth', 'Error checking session:', err);
       }
     };
 

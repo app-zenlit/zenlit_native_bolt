@@ -20,7 +20,8 @@ import { useRef, useCallback } from 'react';
 
 import { createShadowStyle } from '../../src/utils/shadow';
 import GradientTitle from '../../src/components/GradientTitle';
-import { supabase } from '../../src/lib/supabase';
+import { supabase, supabaseReady } from '../../src/lib/supabase';
+import { logger } from '../../src/utils/logger';
 
 const PRIMARY_GRADIENT = ['#2563eb', '#7e22ce'] as const;
 const COOLDOWN_SECONDS = 60;
@@ -68,6 +69,16 @@ export default function VerifyOTPScreen() {
     if (!isComplete || verifying) {
       return;
     }
+
+    if (!supabaseReady) {
+      logger.error('Auth', 'Supabase not configured for OTP verification');
+      setError('Authentication service is not available. Please contact support.');
+      return;
+    }
+
+    const maskedEmail = (email || '').replace(/(.{2})(.*)(@.*)/, '$1***$3');
+    logger.info('Auth', 'Attempting OTP verification', { email: maskedEmail });
+
     setVerifying(true);
     setError('');
     setStatus('');
@@ -80,31 +91,55 @@ export default function VerifyOTPScreen() {
       });
 
       if (error) {
-        setError(error.message);
+        logger.error('Auth', 'OTP verification failed', {
+          email: maskedEmail,
+          errorName: error.name,
+          errorMessage: error.message,
+        });
+
+        let userMessage = error.message;
+
+        if (error.message.includes('expired') || error.message.includes('invalid')) {
+          userMessage = 'This code has expired or is invalid. Please request a new code.';
+        } else if (error.message.includes('not found')) {
+          userMessage = 'Invalid verification code. Please check and try again.';
+        }
+
+        setError(userMessage);
         setVerifying(false);
         return;
       }
 
       if (data.user) {
-        // Check if user has completed profile setup
-        const { data: profile } = await supabase
+        logger.info('Auth', 'OTP verification successful', { userId: data.user.id });
+
+        const { data: profile, error: profileError } = await supabase
           .from('profiles')
           .select('id')
           .eq('id', data.user.id)
           .maybeSingle();
 
+        if (profileError) {
+          logger.error('Auth', 'Error checking profile', { error: profileError.message });
+        }
+
         if (profile) {
-          // Profile exists, go to radar
+          logger.info('Auth', 'Profile exists, navigating to radar');
           router.replace('/radar');
         } else {
-          // Profile doesn't exist, go to onboarding
+          logger.info('Auth', 'No profile found, navigating to onboarding');
           router.replace('/onboarding/profile/basic');
         }
       } else {
+        logger.error('Auth', 'OTP verification returned no user');
         setError('Verification failed. Please try again.');
         setVerifying(false);
       }
-    } catch (error) {
+    } catch (error: any) {
+      logger.error('Auth', 'OTP verification exception', {
+        email: maskedEmail,
+        error: error?.message || String(error),
+      });
       setError('Something went wrong. Please try again.');
       setVerifying(false);
     }
@@ -114,6 +149,10 @@ export default function VerifyOTPScreen() {
     if (cooldown > 0 || resending) {
       return;
     }
+
+    const maskedEmail = (email || '').replace(/(.{2})(.*)(@.*)/, '$1***$3');
+    logger.info('Auth', 'Resending OTP code', { email: maskedEmail });
+
     setResending(true);
     setError('');
     setStatus('');
@@ -127,15 +166,31 @@ export default function VerifyOTPScreen() {
       });
 
       if (error) {
-        setError(error.message);
+        logger.error('Auth', 'OTP resend failed', {
+          email: maskedEmail,
+          errorMessage: error.message,
+        });
+
+        let userMessage = error.message;
+
+        if (error.message.includes('rate limit') || error.message.includes('too many')) {
+          userMessage = 'Too many attempts. Please wait a few minutes before requesting a new code.';
+        }
+
+        setError(userMessage);
         setResending(false);
         return;
       }
 
+      logger.info('Auth', 'OTP resend successful', { email: maskedEmail });
       setStatus('We sent a new code to your inbox.');
       startCooldown(COOLDOWN_SECONDS);
       setResending(false);
-    } catch (error) {
+    } catch (error: any) {
+      logger.error('Auth', 'OTP resend exception', {
+        email: maskedEmail,
+        error: error?.message || String(error),
+      });
       setError('Failed to resend code. Please try again.');
       setResending(false);
     }
