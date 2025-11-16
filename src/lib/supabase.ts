@@ -1,37 +1,38 @@
-import { logger } from '../utils/logger';
-import { createClient } from '@supabase/supabase-js';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import Constants from 'expo-constants';
+import { logger } from '../utils/logger'
+import { createClient } from '@supabase/supabase-js'
+import AsyncStorage from '@react-native-async-storage/async-storage'
+import Constants from 'expo-constants'
 
-const readEnv = (key: string): string | undefined => {
-  const val = (process.env as any)?.[key] ?? (globalThis as any)?.[key];
-  if (typeof val !== 'string') return undefined;
-  const trimmed = val.trim();
-  if (!trimmed || trimmed.toLowerCase() === 'undefined' || trimmed.toLowerCase() === 'null') return undefined;
-  return trimmed;
-};
+const normalize = (val?: string): string | undefined => {
+  if (typeof val !== 'string') return undefined
+  const trimmed = val.trim().replace(/^"|"$/g, '').replace(/^'|'$/g, '')
+  if (!trimmed) return undefined
+  const lower = trimmed.toLowerCase()
+  if (lower === 'undefined' || lower === 'null') return undefined
+  return trimmed
+}
 
 const getSupabaseConfig = (): { url?: string; anonKey?: string; source: string } => {
-  let url = readEnv('EXPO_PUBLIC_SUPABASE_URL');
-  let anonKey = readEnv('EXPO_PUBLIC_SUPABASE_ANON_KEY');
-  let source = 'process.env';
+  let url = normalize(process.env.EXPO_PUBLIC_SUPABASE_URL)
+  let anonKey = normalize(process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY)
+  let source = 'process.env'
 
   if (!url || !anonKey) {
-    url = Constants.expoConfig?.extra?.supabaseUrl;
-    anonKey = Constants.expoConfig?.extra?.supabaseAnonKey;
-    source = 'Constants.expoConfig.extra';
+    url = normalize(Constants.expoConfig?.extra?.supabaseUrl)
+    anonKey = normalize(Constants.expoConfig?.extra?.supabaseAnonKey)
+    source = 'Constants.expoConfig.extra'
   }
 
   if (!url || !anonKey) {
-    url = (Constants as any).manifest?.extra?.supabaseUrl;
-    anonKey = (Constants as any).manifest?.extra?.supabaseAnonKey;
-    source = 'Constants.manifest.extra';
+    url = normalize((Constants as any).manifest?.extra?.supabaseUrl)
+    anonKey = normalize((Constants as any).manifest?.extra?.supabaseAnonKey)
+    source = 'Constants.manifest.extra'
   }
 
   return { url, anonKey, source };
 };
 
-const { url: envUrl, anonKey: envAnon, source: configSource } = getSupabaseConfig();
+const { url: envUrl, anonKey: envAnon, source: configSource } = getSupabaseConfig()
 
 const isValidHttpUrl = (url?: string): boolean => {
   if (!url) return false;
@@ -44,36 +45,19 @@ const isValidHttpUrl = (url?: string): boolean => {
 };
 
 const isLikelySupabaseUrl = (url?: string): boolean => {
-  if (!isValidHttpUrl(url)) return false;
+  if (!isValidHttpUrl(url)) return false
   try {
-    const u = new URL(url as string);
-    const host = u.host.toLowerCase();
-    const port = u.port;
-    const path = u.pathname.toLowerCase();
-
-    // Official hosted projects
-    if (host.includes('supabase.co') || host.includes('supabase.com') || host.includes('supabase.in')) {
-      return true;
-    }
-
-    // Local dev: typically `http://127.0.0.1:54321` or endpoints prefixed with service paths
-    const isLocalHost = host.includes('localhost') || host.includes('127.0.0.1');
-    if (isLocalHost) {
-      // Accept common local Supabase REST port or explicit service paths
-      if (port === '54321') return true;
-      if (path.startsWith('/rest') || path.startsWith('/auth') || path.startsWith('/storage') || path.startsWith('/functions')) {
-        return true;
-      }
-      return false;
-    }
-
-    return false;
+    const u = new URL(url as string)
+    const host = u.host.toLowerCase()
+    if (host.includes('supabase.co') || host.includes('supabase.com') || host.includes('supabase.in')) return true
+    if (host.includes('localhost') || host.includes('127.0.0.1')) return true
+    return false
   } catch {
-    return false;
+    return false
   }
-};
+}
 
-const hasValidConfig = isLikelySupabaseUrl(envUrl) && !!envAnon;
+const hasValidConfig = isLikelySupabaseUrl(envUrl) && !!envAnon
 
 const cryptoAvailable = typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function';
 const urlAvailable = typeof URL !== 'undefined';
@@ -88,20 +72,20 @@ const urlAvailable = typeof URL !== 'undefined';
     cryptoAvailable,
     urlAvailable,
     ready: hasValidConfig,
-  };
-  logger.info('Supabase', 'Initialization config', meta);
-})();
+  }
+  logger.info('Supabase', 'Initialization config', meta)
+})()
 
 // Create client with defensive try/catch; fall back to safe stub if creation fails
-let supabase: any;
-let supabaseReady = false;
+let supabase: any
+let supabaseReady = false
 
 const makeStub = () => {
-  logger.warn('Supabase', 'Not configured or failed to initialize. Running in stub mode without backend.');
+  logger.warn('Supabase', 'Not configured or failed to initialize. Running in stub mode without backend.')
   const unsupported = (method?: string) => {
-    const err = new Error(`[Supabase] Not configured. ${method ? method + ' is unavailable in preview-safe mode.' : 'Backend unavailable.'}`);
-    return Promise.reject(err);
-  };
+    const err = new Error(`[Supabase] Not configured. ${method ? method + ' is unavailable in preview-safe mode.' : 'Backend unavailable.'}`)
+    return Promise.reject(err)
+  }
 
   const createQueryBuilder = () => {
     const builder: any = {
@@ -204,8 +188,8 @@ const makeStub = () => {
         remove: (paths: string[]) => unsupported('storage.remove'),
       }),
     },
-  } as any;
-};
+  } as any
+}
 
 if (hasValidConfig) {
   try {
@@ -216,44 +200,44 @@ if (hasValidConfig) {
         persistSession: true,
         detectSessionInUrl: false,
       },
-    });
-    supabaseReady = true;
+    })
+    supabaseReady = true
   } catch (err) {
-    logger.error('Supabase', 'Failed to initialize client:', err);
-    supabase = makeStub();
-    supabaseReady = false;
+    logger.error('Supabase', 'Failed to initialize client:', err)
+    supabase = makeStub()
+    supabaseReady = false
   }
 } else {
-  supabase = makeStub();
-  supabaseReady = false;
+  supabase = makeStub()
+  supabaseReady = false
 }
 
-export { supabase, supabaseReady, getSupabaseConfig };
+export { supabase, supabaseReady, getSupabaseConfig }
 
 // Handle auth state changes only when real client exists
 if (supabaseReady) {
   supabase.auth.onAuthStateChange(async (event: string, session: any) => {
     if (event === 'TOKEN_REFRESHED') {
-      logger.info('Supabase', 'Token refreshed successfully');
+      logger.info('Supabase', 'Token refreshed successfully')
     } else if (event === 'SIGNED_OUT') {
-      logger.info('Supabase', 'User signed out, session cleared');
+      logger.info('Supabase', 'User signed out, session cleared')
     }
-  });
+  })
 }
 
 // Function to clear invalid session data
 export const clearInvalidSession = async () => {
   try {
     if (supabaseReady) {
-      const { data } = await supabase.auth.getSession();
+      const { data } = await supabase.auth.getSession()
       if (data?.session) {
         try {
-          await supabase.auth.signOut({ scope: 'global' });
+          await supabase.auth.signOut({ scope: 'global' })
         } catch {}
       }
     }
-    logger.info('Supabase', 'Invalid session cleared');
+    logger.info('Supabase', 'Invalid session cleared')
   } catch (error) {
-    logger.error('Supabase', 'Error clearing session:', error);
+    logger.error('Supabase', 'Error clearing session:', error)
   }
-};
+}

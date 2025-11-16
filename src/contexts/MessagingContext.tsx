@@ -8,7 +8,7 @@ import React, {
   useState,
 } from 'react';
 
-import { supabase } from '../lib/supabase';
+import { supabase, supabaseReady } from '../lib/supabase';
 import {
   UserUnreadCount,
   markMessagesDelivered,
@@ -53,6 +53,10 @@ export const MessagingProvider: React.FC<ProviderProps> = ({ children }) => {
   useEffect(() => {
     let mounted = true;
     (async () => {
+      if (!supabaseReady) {
+        setCurrentUserId(null);
+        return;
+      }
       const { data } = await supabase.auth.getUser();
       if (mounted) {
         setCurrentUserId(data.user?.id ?? null);
