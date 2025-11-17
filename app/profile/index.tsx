@@ -28,6 +28,7 @@ import {
 } from '../../src/constants/socialPlatforms';
 import { getCurrentUserProfile, getUserPosts, deletePost as deletePostDb, Profile, SocialLinks, Post as PostType } from '../../src/services';
 import { supabase } from '../../src/lib/supabase';
+import { getPostLogoutRoute } from '../../src/utils/authNavigation';
 
 const SOCIAL_ORDER: Array<'instagram' | 'linkedin' | 'twitter'> = [
   'instagram',
@@ -146,8 +147,7 @@ const ProfileScreen: React.FC = () => {
         await supabase.auth.signOut({ scope: 'global' });
       } catch {}
     }
-    // Route to unified auth screen instead of legacy sign-in page
-    router.replace('/auth');
+    router.replace(getPostLogoutRoute());
   }, [router]);
 
   const handleDeletePost = useCallback(async (id: string) => {

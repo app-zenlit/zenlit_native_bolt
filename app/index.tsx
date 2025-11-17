@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 
 import { createShadowStyle } from '../src/utils/shadow';
 import GradientTitle from '../src/components/GradientTitle';
@@ -32,6 +33,7 @@ const GetStartedScreen: React.FC = () => {
   const containerScale = useRef(new Animated.Value(1)).current;
   const containerTranslate = useRef(new Animated.Value(0)).current;
   const containerOpacity = useRef(new Animated.Value(1)).current;
+  const navTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     containerScale.setValue(1);
@@ -59,6 +61,25 @@ const GetStartedScreen: React.FC = () => {
     ]).start();
   }, [containerOpacity, containerScale, containerTranslate]);
 
+  useFocusEffect(
+    useCallback(() => {
+      setIsNavigating(false);
+      containerScale.setValue(1);
+      containerTranslate.setValue(0);
+      containerOpacity.setValue(1);
+      if (navTimeoutRef.current) {
+        clearTimeout(navTimeoutRef.current);
+        navTimeoutRef.current = null;
+      }
+      return () => {
+        if (navTimeoutRef.current) {
+          clearTimeout(navTimeoutRef.current);
+          navTimeoutRef.current = null;
+        }
+      };
+    }, [containerOpacity, containerScale, containerTranslate])
+  );
+
   const handlePress = useCallback(() => {
     if (isNavigating) {
       return;
@@ -67,8 +88,8 @@ const GetStartedScreen: React.FC = () => {
     setIsNavigating(true);
     runContainerAnimation(true);
 
-    setTimeout(() => {
-      router.push('/auth');
+    navTimeoutRef.current = setTimeout(() => {
+      router.replace('/auth');
     }, 420);
   }, [isNavigating, router, runContainerAnimation]);
 

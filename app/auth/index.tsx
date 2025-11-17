@@ -1,7 +1,8 @@
 import * as React from 'react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
+  BackHandler,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -16,6 +17,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 
 import { createShadowStyle } from '../../src/utils/shadow';
 import GradientTitle from '../../src/components/GradientTitle';
@@ -54,6 +56,21 @@ const AuthScreen: React.FC = () => {
   const cardOpacity = useRef(new Animated.Value(0)).current;
   const cardTranslate = useRef(new Animated.Value(24)).current;
   const cardScale = useRef(new Animated.Value(0.98)).current;
+
+  useFocusEffect(
+    useCallback(() => {
+      const handleBackPress = () => {
+        if (Platform.OS === 'android') {
+          BackHandler.exitApp();
+        }
+        return true;
+      };
+      const subscription = BackHandler.addEventListener('hardwareBackPress', handleBackPress);
+      return () => {
+        subscription.remove();
+      };
+    }, [])
+  );
 
   useEffect(() => {
     Animated.parallel([

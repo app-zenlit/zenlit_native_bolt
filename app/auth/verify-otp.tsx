@@ -22,6 +22,7 @@ import { createShadowStyle } from '../../src/utils/shadow';
 import GradientTitle from '../../src/components/GradientTitle';
 import { supabase, supabaseReady } from '../../src/lib/supabase';
 import { logger } from '../../src/utils/logger';
+import { determinePostAuthRoute } from '../../src/utils/authNavigation';
 
 const PRIMARY_GRADIENT = ['#2563eb', '#7e22ce'] as const;
 const COOLDOWN_SECONDS = 60;
@@ -113,23 +114,8 @@ export default function VerifyOTPScreen() {
       if (data.user) {
         logger.info('Auth', 'OTP verification successful', { userId: data.user.id });
 
-        const { data: profile, error: profileError } = await supabase
-          .from('profiles')
-          .select('id')
-          .eq('id', data.user.id)
-          .maybeSingle();
-
-        if (profileError) {
-          logger.error('Auth', 'Error checking profile', { error: profileError.message });
-        }
-
-        if (profile) {
-          logger.info('Auth', 'Profile exists, navigating to radar');
-          router.replace('/radar');
-        } else {
-          logger.info('Auth', 'No profile found, navigating to onboarding');
-          router.replace('/onboarding/profile/basic');
-        }
+        const targetRoute = await determinePostAuthRoute({ userId: data.user.id });
+        router.replace(targetRoute ?? '/onboarding/profile/basic');
       } else {
         logger.error('Auth', 'OTP verification returned no user');
         setError('Verification failed. Please try again.');

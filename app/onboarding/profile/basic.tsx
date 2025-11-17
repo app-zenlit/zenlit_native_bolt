@@ -25,7 +25,7 @@ import DateTimePicker, {
 import { createShadowStyle } from '../../../src/utils/shadow';
 import GradientTitle from '../../../src/components/GradientTitle';
 import { supabase } from '../../../src/lib/supabase';
-import { validateProfileData, validateDateOfBirth, validateUsername, validateDisplayName, checkUsernameAvailability, type ProfileData } from '../../../src/utils/profileValidation';
+import { validateProfileData, validateDateOfBirth, validateUsername, validateDisplayName, checkUsernameAvailability, formatDate, parseDobString, normalizeGender, type ProfileData } from '../../../src/utils/profileValidation';
 import UsernameSuggestions from '../../../src/components/UsernameSuggestions';
 
 
@@ -76,32 +76,27 @@ const OnboardingBasicScreen: React.FC = () => {
   const [usernameSuggestions, setUsernameSuggestions] = useState<string[]>([]);
   const usernameCheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const formatDate = (date: Date) => {
-    const year = date.getFullYear();
-    const month = `${date.getMonth() + 1}`.padStart(2, '0');
-    const day = `${date.getDate()}`.padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const { data: auth } = await supabase.auth.getUser();
+      const user = auth?.user;
+      if (!user || !active) return;
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('id', user.id)
+        .maybeSingle();
+      if (profile && active) {
+        router.replace('/radar');
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [router]);
 
-  const parseDobString = (value: string): Date | null => {
-    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-    if (!match) {
-      return null;
-    }
-    const year = Number(match[1]);
-    const month = Number(match[2]) - 1;
-    const day = Number(match[3]);
-    const candidate = new Date(year, month, day);
-    if (
-      candidate.getFullYear() === year &&
-      candidate.getMonth() === month &&
-      candidate.getDate() === day
-    ) {
-      candidate.setHours(0, 0, 0, 0);
-      return candidate;
-    }
-    return null;
-  };
+  
 
   const maxDobDate = useMemo(() => {
     const now = new Date();
@@ -295,8 +290,7 @@ const OnboardingBasicScreen: React.FC = () => {
       return;
     }
 
-    const normalizedGender =
-      gender === 'Male' ? 'male' : gender === 'Female' ? 'female' : 'other';
+    const normalizedGender = normalizeGender(gender);
 
     const dobValue = dobDate ? formatDate(dobDate) : dob;
 
@@ -304,7 +298,7 @@ const OnboardingBasicScreen: React.FC = () => {
       display_name: displayName.trim(),
       user_name: username.trim().toLowerCase(),
       date_of_birth: dobValue,
-      gender: normalizedGender as 'male' | 'female' | 'other',
+      gender: normalizedGender,
     };
 
     const validation = validateProfileData(profileData);
