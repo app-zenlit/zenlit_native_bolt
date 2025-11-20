@@ -56,13 +56,21 @@ export const determinePostAuthRoute = async (options?: {
     if (typeof profile === 'undefined') {
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, display_name, user_name, date_of_birth, gender, bio, avatar_url')
+        .select('id, display_name, user_name, date_of_birth, gender, social_links(bio, profile_pic_url)')
         .eq('id', userId)
         .maybeSingle();
       if (error) {
         logger.error('AuthNavigation', 'Failed to load profile for routing', error);
       }
-      profile = data as ProfileRecord;
+      // Flatten the social_links data
+      profile = data ? {
+        display_name: data.display_name,
+        user_name: data.user_name,
+        date_of_birth: data.date_of_birth,
+        gender: data.gender,
+        bio: (data.social_links as any)?.bio ?? null,
+        avatar_url: (data.social_links as any)?.profile_pic_url ?? null,
+      } : null;
     }
 
     if (!hasBasicProfile(profile)) {

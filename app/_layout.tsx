@@ -70,17 +70,12 @@ const RootLayout: React.FC = () => {
     };
   }, []);
 
-  if (!fontsLoaded) {
-    // Avoid rendering before fonts load to ensure consistent typography
-    return null;
-  }
-
   useEffect(() => {
     if (!supabaseReady || !isAuthenticated) {
       return;
     }
 
-    if (!isPreauthRoute && !isGetStartedRoute) {
+    if (!isAuthRoute && !isGetStartedRoute) {
       return;
     }
 
@@ -109,7 +104,7 @@ const RootLayout: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [isAuthenticated, isGetStartedRoute, isPreauthRoute, normalizedPath, router, supabaseReady]);
+  }, [isAuthenticated, isGetStartedRoute, isAuthRoute, normalizedPath, router, supabaseReady]);
 
   if (!fontsLoaded) {
     // Avoid rendering before fonts load to ensure consistent typography

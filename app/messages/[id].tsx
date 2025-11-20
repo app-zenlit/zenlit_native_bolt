@@ -226,7 +226,7 @@ const ChatDetailScreen: React.FC = () => {
   useFocusEffect(
     useCallback(() => {
       if (!otherUserId) {
-        return () => {};
+        return () => { };
       }
 
       logger.debug('RT:Thread', 'Screen focused');
@@ -343,36 +343,7 @@ const ChatDetailScreen: React.FC = () => {
     hasMarkedReadRef.current = false;
   }, [otherUserId]);
 
-  useEffect(() => {
-    if (prependingRef.current) {
-      return;
-    }
-
-    if (!initialScrollDoneRef.current && state.messages.length > 0 && !loading && contentHeightRef.current > 0) {
-      const timeout = setTimeout(() => {
-        programmaticScrollRef.current = true;
-        listRef.current?.scrollToEnd({ animated: true });
-        initialScrollDoneRef.current = true;
-        hasMountedRef.current = true;
-        isAtBottomRef.current = true;
-        setTimeout(() => {
-          programmaticScrollRef.current = false;
-        }, 300);
-      }, 150);
-      return () => clearTimeout(timeout);
-    }
-
-    if (initialScrollDoneRef.current && isAtBottomRef.current && state.messages.length > 0) {
-      const timeout = setTimeout(() => {
-        programmaticScrollRef.current = true;
-        listRef.current?.scrollToEnd({ animated: true });
-        setTimeout(() => {
-          programmaticScrollRef.current = false;
-        }, 300);
-      }, 100);
-      return () => clearTimeout(timeout);
-    }
-  }, [state.messages.length, loading]);
+  // Initial scroll effect removed - Inverted FlatList handles this naturally
 
   useEffect(() => {
     if (!otherUserId || !currentUserId) {
@@ -508,7 +479,30 @@ const ChatDetailScreen: React.FC = () => {
         if (messagesError) {
           logger.error('RT:Thread', 'Error loading messages:', messagesError);
         } else {
-          const chatMessages = sortMessagesAsc(messagesData.map(mapServerMessage));
+          // Use user.id directly instead of currentUserId state to avoid race condition
+          const chatMessages = sortMessagesAsc(
+            messagesData.map((msg) => {
+              const fromMe = msg.sender_id === user.id;
+              let status: MessageStatus = 'sent';
+              if (fromMe) {
+                if (msg.read_at) {
+                  status = 'read';
+                } else if (msg.delivered_at) {
+                  status = 'delivered';
+                } else {
+                  status = 'sent';
+                }
+              }
+
+              return {
+                id: msg.id,
+                text: msg.text || '',
+                sentAt: msg.created_at,
+                fromMe,
+                status,
+              };
+            })
+          );
           dispatch({
             type: 'SET_MESSAGES',
             messages: chatMessages,
@@ -523,7 +517,7 @@ const ChatDetailScreen: React.FC = () => {
     };
 
     loadChat();
-  }, [otherUserId, mapServerMessage, checkAnonymity]);
+  }, [otherUserId, checkAnonymity]);
 
   const loadOlder = useCallback(async () => {
     if (state.isFetchingMore || !state.hasMore || !otherUserId || state.messages.length === 0)
@@ -534,9 +528,7 @@ const ChatDetailScreen: React.FC = () => {
 
     logger.debug('RT:Thread', 'Loading older messages');
     dispatch({ type: 'SET_FETCHING_MORE', isFetchingMore: true });
-    preAppendHeightRef.current = contentHeightRef.current;
-    preAppendOffsetRef.current = scrollYRef.current;
-    prependingRef.current = true;
+    // prependingRef logic removed as inverted list handles this natively
 
     const { messages: olderData, error } = await getMessagesBetweenUsers(
       otherUserId,
@@ -555,7 +547,6 @@ const ChatDetailScreen: React.FC = () => {
       });
     } else {
       dispatch({ type: 'SET_FETCHING_MORE', isFetchingMore: false });
-      prependingRef.current = false;
     }
 
     dispatch({ type: 'SET_FETCHING_MORE', isFetchingMore: false });
@@ -563,14 +554,23 @@ const ChatDetailScreen: React.FC = () => {
 
   const data = useMemo<RenderItem[]>(() => {
     const entries: RenderItem[] = [];
-    let currentLabel: string | null = null;
-    state.messages.forEach((message) => {
+    // Sort descending for inverted list (Newest first)
+    const reversedMessages = [...state.messages].sort(
+      (a, b) => new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime()
+    );
+
+    reversedMessages.forEach((message, index) => {
+      // Add message
+      entries.push({ type: 'message', id: message.id, message });
+
+      // Check if we need a day divider after this message (visually above)
       const label = formatDayLabel(message.sentAt);
-      if (label !== currentLabel) {
-        currentLabel = label;
+      const nextMessage = reversedMessages[index + 1];
+      const nextLabel = nextMessage ? formatDayLabel(nextMessage.sentAt) : null;
+
+      if (label !== nextLabel) {
         entries.push({ type: 'day', id: `day-${label}-${message.id}`, label });
       }
-      entries.push({ type: 'message', id: message.id, message });
     });
     return entries;
   }, [state.messages]);
@@ -598,13 +598,8 @@ const ChatDetailScreen: React.FC = () => {
     dispatch({ type: 'UPSERT_MESSAGE', message: optimisticMessage });
 
     isAtBottomRef.current = true;
-    setTimeout(() => {
-      programmaticScrollRef.current = true;
-      listRef.current?.scrollToEnd({ animated: true });
-      setTimeout(() => {
-        programmaticScrollRef.current = false;
-      }, 300);
-    }, 50);
+    // Scroll to bottom (offset 0 in inverted list)
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
 
     try {
       const { message, error } = await sendMessage(otherUserId, body, messageId);
@@ -735,59 +730,42 @@ const ChatDetailScreen: React.FC = () => {
                 />
               );
             }}
+            inverted
             contentContainerStyle={[
               styles.listContent,
-              { paddingBottom: composerHeight + 12 }
+              { paddingBottom: 16, paddingTop: 16 }
             ]}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
+            onEndReached={loadOlder}
+            onEndReachedThreshold={0.2}
             onScroll={(e) => {
               const y = e.nativeEvent.contentOffset.y;
-              const height = e.nativeEvent.layoutMeasurement.height;
-              const contentHeight = e.nativeEvent.contentSize.height;
-
               scrollYRef.current = y;
-              const wasAtBottom = isAtBottomRef.current;
-              const threshold = contentHeight > height ? 20 : 0;
-              isAtBottomRef.current = y + height >= contentHeight - threshold;
 
-              if (!programmaticScrollRef.current && !wasAtBottom && isAtBottomRef.current && !hasMarkedReadRef.current && otherUserId && initialScrollDoneRef.current) {
+              // In inverted list, y=0 is the bottom
+              const isAtBottom = y < 20;
+              isAtBottomRef.current = isAtBottom;
+
+              if (isAtBottom && !hasMarkedReadRef.current && otherUserId) {
                 logger.debug('RT:Thread', 'User scrolled to bottom, marking messages as read');
                 markThreadRead(otherUserId).catch((err) =>
                   logger.error('RT:Thread', 'Failed to mark read on scroll', err)
                 );
                 hasMarkedReadRef.current = true;
               }
-
-              const TOP_THRESHOLD = 24;
-              if (y <= TOP_THRESHOLD && !prependingRef.current) {
-                loadOlder();
-              }
             }}
             scrollEventThrottle={16}
-            onContentSizeChange={(w, h) => {
-              if (prependingRef.current) {
-                const delta = h - preAppendHeightRef.current;
-                if (delta > 0) {
-                  listRef.current?.scrollToOffset({
-                    offset: preAppendOffsetRef.current + delta,
-                    animated: false,
-                  });
-                }
-                prependingRef.current = false;
-              }
-              contentHeightRef.current = h;
-            }}
             ListHeaderComponent={
+              isTyping && !isAnonymous && otherUser ? (
+                <TypingIndicator displayName={displayName} />
+              ) : null
+            }
+            ListFooterComponent={
               state.isFetchingMore ? (
                 <View style={{ paddingVertical: 8, alignItems: 'center' }}>
                   <ActivityIndicator size="small" color={theme.colors.muted} />
                 </View>
-              ) : null
-            }
-            ListFooterComponent={
-              isTyping && !isAnonymous && otherUser ? (
-                <TypingIndicator displayName={displayName} />
               ) : null
             }
           />
@@ -812,14 +790,14 @@ const ChatDetailScreen: React.FC = () => {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: theme.colors.background,
+    backgroundColor: '#000000',
   },
   missingRoot: {
     flex: 1,
-    backgroundColor: theme.colors.background,
+    backgroundColor: '#000000',
   },
   safeArea: {
-    backgroundColor: theme.colors.headerBackground,
+    backgroundColor: '#000000',
   },
   missingContent: {
     flex: 1,
@@ -835,14 +813,15 @@ const styles = StyleSheet.create({
   },
   messagesArea: {
     flex: 1,
+    backgroundColor: '#000000',
   },
   listContent: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    gap: 4,
+    paddingHorizontal: 16,
+    gap: 8,
   },
   composerWrapper: {
-    backgroundColor: theme.colors.surface,
+    backgroundColor: '#000000',
+    borderTopWidth: 0,
   },
 });
 

@@ -76,8 +76,8 @@ const Composer: React.FC<ComposerProps> = ({ onSend, disabled = false, onTypingC
             style={[styles.input, disabled ? styles.inputTextDisabled : null]}
             value={value}
             onChangeText={handleTextChange}
-            placeholder={disabled ? 'Chat is read-only.' : 'Type a message'}
-            placeholderTextColor={disabled ? theme.colors.iconInactive : theme.colors.muted}
+            placeholder={disabled ? 'Chat is read-only.' : 'Type a message...'}
+            placeholderTextColor={disabled ? theme.colors.iconInactive : '#9ca3af'}
             editable={!disabled}
             multiline
             numberOfLines={1}
@@ -97,12 +97,12 @@ const Composer: React.FC<ComposerProps> = ({ onSend, disabled = false, onTypingC
           ]}
         >
           {canSend ? (
-            <LinearGradient colors={gradientColors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.sendButton}>
-              <Feather name="send" size={16} color="#ffffff" />
+            <LinearGradient colors={['#2563eb', '#7e22ce']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.sendButton}>
+              <Feather name="arrow-up" size={20} color="#ffffff" />
             </LinearGradient>
           ) : (
             <View style={[styles.sendButton, styles.sendButtonDisabled]}>
-              <Feather name="send" size={16} color={theme.colors.iconInactive} />
+              <Feather name="arrow-up" size={20} color={theme.colors.iconInactive} />
             </View>
           )}
         </Pressable>
@@ -114,52 +114,64 @@ const Composer: React.FC<ComposerProps> = ({ onSend, disabled = false, onTypingC
 const styles = StyleSheet.create({
   container: {
     borderTopWidth: 1,
-    borderTopColor: theme.colors.border,
-    backgroundColor: theme.colors.surface,
-    paddingBottom: 12,
-    paddingTop: 8,
-    paddingHorizontal: 20,
+    borderTopColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: '#000000',
+    paddingBottom: 16,
+    paddingTop: 12,
+    paddingHorizontal: 16,
   },
   inner: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    gap: 10,
+    gap: 12,
   },
   inputWrapper: {
     flex: 1,
-    borderRadius: 0,
-    borderWidth: 0,
-    borderColor: 'transparent',
-    backgroundColor: 'transparent',
-    paddingHorizontal: 12,
-    paddingVertical: 0,
+    borderRadius: 24,
+    backgroundColor: '#1f2937', // Gray-800
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    minHeight: 44,
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
   },
   inputDisabled: {
     opacity: 0.6,
+    backgroundColor: '#111827',
   },
   input: {
-    height: 36,
-    paddingVertical: 8,
-    color: theme.colors.text,
+    minHeight: 24,
+    maxHeight: 100,
+    paddingVertical: 0,
+    color: '#ffffff',
     fontSize: 15,
     lineHeight: 20,
+    fontFamily: 'Inter_400Regular',
   },
   inputTextDisabled: {
     color: theme.colors.iconInactive,
   },
   sendButtonTouchable: {
-    width: 36,
-    height: 36,
-    borderRadius: 14,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
+    shadowColor: '#2563eb',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   sendButtonTouchableDisabled: {
-    opacity: 0.6,
+    opacity: 0.5,
+    shadowOpacity: 0,
+    elevation: 0,
   },
   sendButtonTouchablePressed: {
-    transform: [{ scale: 0.96 }],
+    transform: [{ scale: 0.92 }],
   },
   sendButton: {
     flex: 1,
@@ -167,10 +179,10 @@ const styles = StyleSheet.create({
     height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 14,
+    borderRadius: 22,
   },
   sendButtonDisabled: {
-    backgroundColor: 'rgba(148, 163, 184, 0.16)',
+    backgroundColor: '#1f2937',
   },
 });
 
