@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -15,7 +15,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 
 import AppHeader from '../../src/components/AppHeader';
 import LogoutConfirmation from '../../src/components/LogoutConfirmation';
@@ -67,29 +67,63 @@ const ProfileScreen: React.FC = () => {
   const [socialLinks, setSocialLinks] = useState<SocialLinks | null>(null);
   const [posts, setPosts] = useState<PostType[]>([]);
   const [loading, setLoading] = useState(true);
+  const hasLoadedRef = useRef(false);
   const { width } = useWindowDimensions();
   const headerGap = width < 360 ? 10 : width < 768 ? 12 : 14;
   const bannerMargin = 32 + headerGap; // avatar overhang (92 - 60) + dynamic gap
+  const loadUserData = useCallback(
+    async (options: { silent?: boolean } = {}) => {
+      if (!options.silent) {
+        setLoading(true);
+      }
+
+      try {
+        const { profile: userProfile, socialLinks: userSocialLinks } = await getCurrentUserProfile();
+
+        if (userProfile) {
+          setProfile(userProfile);
+          setSocialLinks(userSocialLinks);
+
+          const { posts: userPosts } = await getUserPosts(userProfile.id);
+          setPosts(userPosts);
+        } else {
+          setProfile(null);
+          setSocialLinks(null);
+          setPosts([]);
+        }
+      } finally {
+        if (!options.silent) {
+          setLoading(false);
+        }
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
-    loadUserData();
-  }, []);
+    let isMounted = true;
+    hasLoadedRef.current = false;
 
-  const loadUserData = async () => {
-    setLoading(true);
+    loadUserData().finally(() => {
+      if (isMounted) {
+        hasLoadedRef.current = true;
+      }
+    });
 
-    const { profile: userProfile, socialLinks: userSocialLinks } = await getCurrentUserProfile();
+    return () => {
+      isMounted = false;
+    };
+  }, [loadUserData]);
 
-    if (userProfile) {
-      setProfile(userProfile);
-      setSocialLinks(userSocialLinks);
+  useFocusEffect(
+    useCallback(() => {
+      if (!hasLoadedRef.current) {
+        return;
+      }
 
-      const { posts: userPosts } = await getUserPosts(userProfile.id);
-      setPosts(userPosts);
-    }
-
-    setLoading(false);
-  };
+      loadUserData({ silent: true });
+    }, [loadUserData]),
+  );
 
   const socialEntries = useMemo(() => {
     if (!socialLinks) {
