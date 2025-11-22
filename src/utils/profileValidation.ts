@@ -17,6 +17,34 @@ export interface UsernameCheckResult {
   suggestions?: string[];
 }
 
+export const VALID_GENDERS = ['male', 'female', 'other'] as const;
+
+export const normalizeGender = (value: string): 'male' | 'female' | 'other' => {
+  const v = value.trim().toLowerCase();
+  if (v.startsWith('male')) return 'male';
+  if (v.startsWith('female')) return 'female';
+  return 'other';
+};
+
+export const formatDate = (date: Date): string => {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
+export const parseDobString = (value: string): Date | null => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]) - 1;
+  const da = Number(m[3]);
+  const dt = new Date(y, mo, da);
+  if (dt.getFullYear() !== y || dt.getMonth() !== mo || dt.getDate() !== da) return null;
+  dt.setHours(0, 0, 0, 0);
+  return dt;
+};
+
 /**
  * Validates username format - only lowercase letters, numbers, dots, underscores, and special characters
  */
@@ -192,8 +220,7 @@ export const validateProfileData = (profileData: ProfileData): ValidationResult 
     return { isValid: false, error: 'Gender is required' };
   }
 
-  const validGenders = ['male', 'female', 'other'];
-  if (!validGenders.includes(profileData.gender)) {
+  if (!(VALID_GENDERS as readonly string[]).includes(profileData.gender)) {
     return { isValid: false, error: 'Invalid gender value' };
   }
 

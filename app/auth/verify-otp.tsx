@@ -22,6 +22,7 @@ import { createShadowStyle } from '../../src/utils/shadow';
 import GradientTitle from '../../src/components/GradientTitle';
 import { supabase, supabaseReady } from '../../src/lib/supabase';
 import { logger } from '../../src/utils/logger';
+import { determinePostAuthRoute } from '../../src/utils/authNavigation';
 
 const PRIMARY_GRADIENT = ['#2563eb', '#7e22ce'] as const;
 const COOLDOWN_SECONDS = 60;
@@ -113,23 +114,9 @@ export default function VerifyOTPScreen() {
       if (data.user) {
         logger.info('Auth', 'OTP verification successful', { userId: data.user.id });
 
-        const { data: profile, error: profileError } = await supabase
-          .from('profiles')
-          .select('id')
-          .eq('id', data.user.id)
-          .maybeSingle();
-
-        if (profileError) {
-          logger.error('Auth', 'Error checking profile', { error: profileError.message });
-        }
-
-        if (profile) {
-          logger.info('Auth', 'Profile exists, navigating to radar');
-          router.replace('/radar');
-        } else {
-          logger.info('Auth', 'No profile found, navigating to onboarding');
-          router.replace('/onboarding/profile/basic');
-        }
+        const targetRoute = await determinePostAuthRoute({ userId: data.user.id });
+        // Use replace to prevent going back to OTP screen
+        router.replace(targetRoute ?? '/onboarding/profile/basic');
       } else {
         logger.error('Auth', 'OTP verification returned no user');
         setError('Verification failed. Please try again.');
@@ -211,23 +198,23 @@ export default function VerifyOTPScreen() {
           <View style={styles.topBar}>
             <Pressable
               accessibilityRole="button"
-              onPress={() => router.replace('/auth')}
+              onPress={() => router.back()}
               style={styles.backButton}
             >
-              <Feather name="arrow-left" size={20} color="#ffffff" />
+              <Feather name="arrow-left" size={24} color="#ffffff" />
             </Pressable>
           </View>
 
           <View style={styles.brandSection}>
             <GradientTitle text="Zenlit" style={styles.brandTitle} />
-            <Text style={styles.brandSubtitle}>Connect with people around you</Text>
+            <Text style={styles.brandSubtitle}>Verify your identity</Text>
           </View>
 
           <View style={styles.card}>
             <View style={styles.infoBanner}>
               <Feather name="mail" size={18} color="#60a5fa" />
               <Text style={styles.infoText}>
-                Check your inbox at <Text style={styles.infoTextStrong}>{email || 'your email'}</Text>
+                Code sent to <Text style={styles.infoTextStrong}>{email || 'your email'}</Text>
               </Text>
             </View>
 
@@ -237,7 +224,7 @@ export default function VerifyOTPScreen() {
             ) : null}
 
             <View style={styles.inputBlock}>
-              <Text style={styles.inputLabel}>Enter the 6-digit code</Text>
+              <Text style={styles.inputLabel}>Enter 6-digit code</Text>
               <View style={styles.otpWrapper}>
                 <TextInput
                   value={code}
@@ -250,7 +237,7 @@ export default function VerifyOTPScreen() {
                   style={styles.otpInput}
                 />
                 {code.length === 0 ? (
-                  <Text style={styles.ghostCode}>123456</Text>
+                  <Text style={styles.ghostCode}>000000</Text>
                 ) : null}
               </View>
             </View>
@@ -280,7 +267,7 @@ export default function VerifyOTPScreen() {
             <View style={styles.resendBlock}>
               {cooldown > 0 ? (
                 <Text style={styles.cooldownText}>
-                  Resend code available in <Text style={styles.cooldownStrong}>{cooldown}s</Text>
+                  Resend code in <Text style={styles.cooldownStrong}>{cooldown}s</Text>
                 </Text>
               ) : (
                 <Pressable accessibilityRole="button" onPress={handleResend}>
@@ -295,7 +282,7 @@ export default function VerifyOTPScreen() {
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
-};
+}
 
 const styles = StyleSheet.create({
   safeArea: {
@@ -315,9 +302,9 @@ const styles = StyleSheet.create({
   },
   topBar: {
     width: '100%',
-    maxWidth: 360,
+    maxWidth: 400,
     alignItems: 'flex-start',
-    marginBottom: 12,
+    marginBottom: 24,
   },
   backButton: {
     width: 44,
@@ -325,11 +312,11 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'transparent',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
   },
   brandSection: {
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 32,
   },
   brandTitle: {
     fontSize: 40,
@@ -344,18 +331,18 @@ const styles = StyleSheet.create({
   },
   card: {
     width: '100%',
-    maxWidth: 360,
+    maxWidth: 400,
     paddingHorizontal: 24,
-    paddingVertical: 28,
+    paddingVertical: 32,
     borderRadius: 24,
-    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+    backgroundColor: 'rgba(15, 23, 42, 0.6)',
     borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.35)',
+    borderColor: 'rgba(148, 163, 184, 0.2)',
     shadowColor: '#000000',
-    shadowOpacity: 0.6,
+    shadowOpacity: 0.5,
     shadowRadius: 24,
-    shadowOffset: { width: 0, height: 18 },
-    elevation: 24,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 12,
   },
   infoBanner: {
     flexDirection: 'row',
@@ -363,8 +350,8 @@ const styles = StyleSheet.create({
     gap: 10,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(96, 165, 250, 0.4)',
-    backgroundColor: 'rgba(30, 58, 138, 0.35)',
+    borderColor: 'rgba(96, 165, 250, 0.3)',
+    backgroundColor: 'rgba(30, 58, 138, 0.2)',
     paddingVertical: 12,
     paddingHorizontal: 16,
   },
@@ -372,6 +359,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 14,
     color: '#cbd5f5',
+    lineHeight: 20,
   },
   infoTextStrong: {
     color: '#ffffff',
@@ -393,13 +381,14 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   inputBlock: {
-    marginTop: 24,
+    marginTop: 32,
   },
   inputLabel: {
     fontSize: 13,
     fontWeight: '600',
     color: '#cbd5f5',
     marginBottom: 12,
+    textAlign: 'center',
   },
   otpWrapper: {
     position: 'relative',
@@ -412,16 +401,16 @@ const styles = StyleSheet.create({
   otpInput: {
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.45)',
-    backgroundColor: 'rgba(15, 23, 42, 0.6)',
+    borderColor: 'rgba(148, 163, 184, 0.3)',
+    backgroundColor: 'rgba(15, 23, 42, 0.4)',
     color: '#ffffff',
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: '600',
-    letterSpacing: 12,
+    letterSpacing: 14,
     textAlign: 'center',
     paddingVertical: 12,
     width: '100%',
-    height: 52,
+    height: 64,
     flexShrink: 0,
   },
   ghostCode: {
@@ -431,38 +420,39 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     textAlign: 'center',
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: '600',
-    letterSpacing: 12,
-    color: 'rgba(148, 163, 184, 0.25)',
+    letterSpacing: 14,
+    color: 'rgba(148, 163, 184, 0.15)',
     textTransform: 'none',
     textAlignVertical: 'center',
-    lineHeight: 48,
-    // Ensure overlay does not block input interaction
+    lineHeight: 60,
     pointerEvents: 'none' as unknown as undefined,
   },
   primaryButton: {
     width: '100%',
-    borderRadius: 18,
+    borderRadius: 16,
     overflow: 'hidden',
     marginTop: 32,
   },
   primaryButtonPressed: {
-    transform: [{ scale: 0.99 }],
+    transform: [{ scale: 0.98 }],
+    opacity: 0.9,
   },
   primaryGradient: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 14,
+    paddingVertical: 16,
     paddingHorizontal: 16,
   },
   primaryLabel: {
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',
+    letterSpacing: 0.5,
   },
   disabled: {
-    opacity: 0.6,
+    opacity: 0.5,
   },
   resendBlock: {
     marginTop: 24,

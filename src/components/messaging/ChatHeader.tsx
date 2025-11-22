@@ -3,11 +3,12 @@ import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import { theme } from '../../styles/theme';
 import { createShadowStyle } from '../../utils/shadow';
 
-const AVATAR_SIZE = 36; // slightly smaller than before for compact header
+const AVATAR_SIZE = 40;
 const TOUCH_SIZE = theme.header.touchSize;
 const ICON_SIZE = theme.header.iconSize;
 const ICON_HIT_SLOP = { top: 6, bottom: 6, left: 6, right: 6 } as const;
@@ -30,10 +31,10 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({ title, subtitle, avatarUrl, isA
   const shadowStyle = createShadowStyle({
     native: {
       shadowColor: '#000000',
-      shadowOpacity: 0.25,
-      shadowRadius: 12,
+      shadowOpacity: 0.4,
+      shadowRadius: 16,
       shadowOffset: { width: 0, height: 8 },
-      elevation: 8,
+      elevation: 10,
     },
   });
 
@@ -49,7 +50,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({ title, subtitle, avatarUrl, isA
             onPress={() => router.back()}
             hitSlop={ICON_HIT_SLOP}
           >
-            <Feather name="arrow-left" size={ICON_SIZE} color={theme.colors.icon} />
+            <Feather name="arrow-left" size={24} color="#ffffff" />
           </Pressable>
 
           <View style={styles.profileRow}>
@@ -66,13 +67,16 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({ title, subtitle, avatarUrl, isA
                 {avatarUrl && !isAnonymous ? (
                   <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
                 ) : (
-                  <View style={styles.avatarFallback}>
+                  <LinearGradient
+                    colors={['#3b82f6', '#2563eb']}
+                    style={styles.avatarFallback}
+                  >
                     {isAnonymous ? (
-                      <Feather name="user" size={20} color={theme.colors.icon} />
+                      <Feather name="user" size={20} color="#ffffff" />
                     ) : (
                       <Text style={styles.avatarInitial}>{initial}</Text>
                     )}
-                  </View>
+                  </LinearGradient>
                 )}
               </Pressable>
               {isOnline && !isAnonymous && (
@@ -91,7 +95,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({ title, subtitle, avatarUrl, isA
                 onPress={() => !isAnonymous && profileId && router.push(`/profile/${profileId}`)}
               >
                 <Text
-                  style={[styles.title, { color: theme.colors.text }]}
+                  style={styles.title}
                   numberOfLines={1}
                   ellipsizeMode="tail"
                 >
@@ -115,37 +119,40 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({ title, subtitle, avatarUrl, isA
 
 const styles = StyleSheet.create({
   wrapper: {
-    backgroundColor: theme.colors.headerBackground,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: theme.colors.border,
-    marginBottom: 10,
+    backgroundColor: '#000000',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.05)',
+    zIndex: 10,
   },
   safeArea: {
-    backgroundColor: theme.colors.headerBackground,
+    backgroundColor: '#000000',
   },
   inner: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: theme.header.paddingHorizontal,
-    paddingTop: 2,
-    paddingBottom: 2,
-    minHeight: theme.header.height,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 12,
+    minHeight: 56,
   },
   backButton: {
-    width: TOUCH_SIZE,
-    height: TOUCH_SIZE,
+    width: 40,
+    height: 40,
     alignItems: 'center',
     justifyContent: 'center',
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.05)',
   },
   iconPressed: {
     opacity: 0.6,
+    backgroundColor: 'rgba(255,255,255,0.1)',
   },
   profileRow: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
-    marginHorizontal: theme.header.contentSpacing,
+    marginHorizontal: 12,
     gap: 12,
   },
   avatarContainer: {
@@ -156,9 +163,9 @@ const styles = StyleSheet.create({
     height: AVATAR_SIZE,
     borderRadius: AVATAR_SIZE / 2,
     overflow: 'hidden',
-    borderWidth: 0,
-    borderColor: 'transparent',
-    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: '#1f2937',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -171,14 +178,14 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     backgroundColor: '#22c55e',
     borderWidth: 2,
-    borderColor: theme.colors.headerBackground,
+    borderColor: '#000000',
   },
   avatarPressed: {
     opacity: 0.85,
   },
   avatarImage: {
-    width: AVATAR_SIZE,
-    height: AVATAR_SIZE,
+    width: '100%',
+    height: '100%',
   },
   avatarFallback: {
     width: '100%',
@@ -187,12 +194,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   avatarInitial: {
-    color: theme.colors.text,
-    fontSize: 16,
+    color: '#ffffff',
+    fontSize: 18,
     fontWeight: '600',
   },
   textBlock: {
     flex: 1,
+    justifyContent: 'center',
   },
   namePressable: {
     alignSelf: 'flex-start',
@@ -202,21 +210,26 @@ const styles = StyleSheet.create({
   },
   title: {
     flexShrink: 1,
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '600',
+    color: '#ffffff',
+    fontFamily: 'Inter_600SemiBold',
+    letterSpacing: 0.3,
   },
   subtitle: {
     fontSize: 13,
-    color: theme.colors.muted,
+    color: '#94a3b8',
     marginTop: 2,
+    fontWeight: '500',
   },
   subtitleTyping: {
     color: '#22c55e',
     fontStyle: 'italic',
+    fontWeight: '600',
   },
   trailingSpace: {
-    width: TOUCH_SIZE,
-    height: TOUCH_SIZE,
+    width: 40,
+    height: 40,
   },
 });
 

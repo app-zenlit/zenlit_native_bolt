@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
+  BackHandler,
   Platform,
   Pressable,
   StyleSheet,
@@ -10,6 +11,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 
 import { createShadowStyle } from '../src/utils/shadow';
 import GradientTitle from '../src/components/GradientTitle';
@@ -59,6 +61,15 @@ const GetStartedScreen: React.FC = () => {
     ]).start();
   }, [containerOpacity, containerScale, containerTranslate]);
 
+  useFocusEffect(
+    useCallback(() => {
+      setIsNavigating(false);
+      containerScale.setValue(1);
+      containerTranslate.setValue(0);
+      containerOpacity.setValue(1);
+    }, [containerOpacity, containerScale, containerTranslate])
+  );
+
   const handlePress = useCallback(() => {
     if (isNavigating) {
       return;
@@ -67,9 +78,10 @@ const GetStartedScreen: React.FC = () => {
     setIsNavigating(true);
     runContainerAnimation(true);
 
+    // Small delay for animation to start
     setTimeout(() => {
       router.push('/auth');
-    }, 420);
+    }, 300);
   }, [isNavigating, router, runContainerAnimation]);
 
   return (
@@ -83,7 +95,10 @@ const GetStartedScreen: React.FC = () => {
           },
         ]}
       >
-        <GradientTitle text="Zenlit" style={styles.title} numberOfLines={1} />
+        <View style={styles.titleWrapper}>
+          <GradientTitle text="Zenlit" style={styles.title} numberOfLines={1} />
+          <Text style={styles.subtitle}>Connect with your world.</Text>
+        </View>
 
         <Pressable
           accessibilityRole="button"
@@ -107,8 +122,6 @@ const GetStartedScreen: React.FC = () => {
             )}
           </LinearGradient>
         </Pressable>
-
-        {/** Removed the secondary sign-in link to declutter the Get Started page */}
       </Animated.View>
     </View>
   );
@@ -124,32 +137,47 @@ const styles = StyleSheet.create({
   },
   content: {
     alignItems: 'center',
+    width: '100%',
+    maxWidth: 400,
+  },
+  titleWrapper: {
+    alignItems: 'center',
+    marginBottom: 64,
   },
   title: {
-    fontSize: 64,
-    fontWeight: '600',
-    letterSpacing: -1,
+    fontSize: 72,
+    fontWeight: '700',
+    letterSpacing: -2,
     textAlign: 'center',
     color: '#ffffff',
-    marginBottom: 48,
+    marginBottom: 16,
+  },
+  subtitle: {
+    fontSize: 18,
+    color: '#94a3b8',
+    textAlign: 'center',
+    letterSpacing: -0.5,
   },
   buttonWrapper: {
-    borderRadius: 16,
+    width: '100%',
+    borderRadius: 20,
     overflow: 'hidden',
     ...BUTTON_ELEVATION,
   },
   buttonPressed: {
     transform: [{ scale: 0.98 }],
+    opacity: 0.9,
   },
   button: {
-    paddingHorizontal: 40,
-    paddingVertical: 16,
+    paddingVertical: 18,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   buttonLabel: {
     color: '#ffffff',
     fontSize: 18,
     fontWeight: '600',
+    letterSpacing: 0.5,
   },
   loadingRow: {
     flexDirection: 'row',
@@ -157,14 +185,6 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     marginLeft: 8,
-  },
-  secondaryLink: {
-    marginTop: 28,
-  },
-  secondaryText: {
-    color: '#60a5fa',
-    fontSize: 15,
-    fontWeight: '600',
   },
 });
 

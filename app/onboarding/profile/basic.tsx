@@ -25,7 +25,7 @@ import DateTimePicker, {
 import { createShadowStyle } from '../../../src/utils/shadow';
 import GradientTitle from '../../../src/components/GradientTitle';
 import { supabase } from '../../../src/lib/supabase';
-import { validateProfileData, validateDateOfBirth, validateUsername, validateDisplayName, checkUsernameAvailability, type ProfileData } from '../../../src/utils/profileValidation';
+import { validateProfileData, validateDateOfBirth, validateUsername, validateDisplayName, checkUsernameAvailability, formatDate, parseDobString, normalizeGender, type ProfileData } from '../../../src/utils/profileValidation';
 import UsernameSuggestions from '../../../src/components/UsernameSuggestions';
 
 
@@ -75,33 +75,6 @@ const OnboardingBasicScreen: React.FC = () => {
   const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
   const [usernameSuggestions, setUsernameSuggestions] = useState<string[]>([]);
   const usernameCheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const formatDate = (date: Date) => {
-    const year = date.getFullYear();
-    const month = `${date.getMonth() + 1}`.padStart(2, '0');
-    const day = `${date.getDate()}`.padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
-
-  const parseDobString = (value: string): Date | null => {
-    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-    if (!match) {
-      return null;
-    }
-    const year = Number(match[1]);
-    const month = Number(match[2]) - 1;
-    const day = Number(match[3]);
-    const candidate = new Date(year, month, day);
-    if (
-      candidate.getFullYear() === year &&
-      candidate.getMonth() === month &&
-      candidate.getDate() === day
-    ) {
-      candidate.setHours(0, 0, 0, 0);
-      return candidate;
-    }
-    return null;
-  };
 
   const maxDobDate = useMemo(() => {
     const now = new Date();
@@ -295,8 +268,7 @@ const OnboardingBasicScreen: React.FC = () => {
       return;
     }
 
-    const normalizedGender =
-      gender === 'Male' ? 'male' : gender === 'Female' ? 'female' : 'other';
+    const normalizedGender = normalizeGender(gender);
 
     const dobValue = dobDate ? formatDate(dobDate) : dob;
 
@@ -304,7 +276,7 @@ const OnboardingBasicScreen: React.FC = () => {
       display_name: displayName.trim(),
       user_name: username.trim().toLowerCase(),
       date_of_birth: dobValue,
-      gender: normalizedGender as 'male' | 'female' | 'other',
+      gender: normalizedGender,
     };
 
     const validation = validateProfileData(profileData);
@@ -340,7 +312,7 @@ const OnboardingBasicScreen: React.FC = () => {
         throw profileError;
       }
 
-      router.push('/onboarding/profile/complete');
+      router.replace('/onboarding/profile/complete');
     } catch (err: any) {
       console.error('Error saving profile:', err);
       Alert.alert('Save Failed', err?.message || 'Could not save your profile. Please try again.');
@@ -367,7 +339,7 @@ const OnboardingBasicScreen: React.FC = () => {
               onPress={() => router.back()}
               style={styles.backButton}
             >
-              <Feather name="arrow-left" size={20} color="#ffffff" />
+              <Feather name="arrow-left" size={24} color="#ffffff" />
             </Pressable>
           </View>
 
@@ -543,17 +515,17 @@ const OnboardingBasicScreen: React.FC = () => {
                 (!isFilled || isSubmitting) ? styles.disabled : null,
                 pressed && isFilled && !isSubmitting ? styles.primaryButtonPressed : null,
               ]}
-        >
-          <LinearGradient
-            colors={PRIMARY_GRADIENT}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.primaryGradient}
-          >
-            <Text style={styles.primaryLabel}>Continue</Text>
-          </LinearGradient>
-        </Pressable>
-      </View>
+            >
+              <LinearGradient
+                colors={PRIMARY_GRADIENT}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.primaryGradient}
+              >
+                <Text style={styles.primaryLabel}>Continue</Text>
+              </LinearGradient>
+            </Pressable>
+          </View>
         </ScrollView>
 
         {Platform.OS === 'ios' ? (
@@ -607,7 +579,7 @@ const styles = StyleSheet.create({
   },
   topBar: {
     width: '100%',
-    maxWidth: 380,
+    maxWidth: 400,
     alignItems: 'flex-start',
     marginBottom: 12,
   },
@@ -617,7 +589,7 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'transparent',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
   },
   brandSection: {
     alignItems: 'center',
@@ -636,7 +608,7 @@ const styles = StyleSheet.create({
   },
   card: {
     width: '100%',
-    maxWidth: 380,
+    maxWidth: 400,
     paddingHorizontal: 24,
     paddingVertical: 28,
     borderRadius: 26,
@@ -805,16 +777,16 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.35)',
+    borderTopWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.2)',
   },
   iosPickerToolbar: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(148, 163, 184, 0.25)',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(148, 163, 184, 0.1)',
   },
   iosPickerAction: {
     color: '#60a5fa',
@@ -822,10 +794,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   iosPicker: {
-    backgroundColor: 'transparent',
+    height: 200,
+    backgroundColor: '#0f172a',
   },
 });
 
 export default OnboardingBasicScreen;
-
-

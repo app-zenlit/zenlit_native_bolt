@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Modal, Pressable, ScrollView, StatusBar, StyleSheet, Text, TextInput, View, Image, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -8,6 +8,7 @@ import { SOCIAL_PLATFORMS, extractUsername } from '../../../src/constants/social
 import GradientTitle from '../../../src/components/GradientTitle';
 import { supabase, supabaseReady } from '../../../src/lib/supabase';
 import { compressImage, MAX_IMAGE_SIZE_BYTES, base64ToUint8Array, type CompressedImage } from '../../../src/utils/imageCompression';
+import { determinePostAuthRoute } from '../../../src/utils/authNavigation';
 
 const FALLBACK_AVATAR = null;
 
@@ -57,6 +58,11 @@ const CompleteProfileScreen: React.FC = () => {
     clearPendingImages();
     router.back();
   };
+
+  const redirectToNextScreen = useCallback(async () => {
+    const targetRoute = await determinePostAuthRoute();
+    router.replace(targetRoute ?? '/radar');
+  }, [router]);
 
   // Track mounted state to prevent setState on unmounted
   const mountedRef = useRef(true);
@@ -189,7 +195,7 @@ const CompleteProfileScreen: React.FC = () => {
         successTimeoutRef.current = setTimeout(() => {
           if (mountedRef.current) {
             setShowSuccess(false);
-            router.replace('/radar');
+            void redirectToNextScreen();
             successTimeoutRef.current = null;
           }
         }, 800);
@@ -216,7 +222,7 @@ const CompleteProfileScreen: React.FC = () => {
     clearSuccessTimeout();
     setShowSuccess(false);
     clearPendingImages();
-    router.replace('/radar');
+    void redirectToNextScreen();
   };
 
   const openBannerMenu = () => {

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
   Image,
@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { MessageSquare } from 'lucide-react-native';
 
 import Post from '../../src/components/Post';
@@ -81,6 +81,7 @@ const UserProfileScreen: React.FC = () => {
   const [posts, setPosts] = useState<DbPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const hasLoadedRef = useRef(false);
 
   // Responsive spacing units
   const { width } = useWindowDimensions();
@@ -93,40 +94,78 @@ const UserProfileScreen: React.FC = () => {
     return (asString ?? '').trim();
   }, [params.id]);
 
-  useEffect(() => {
-    const loadProfile = async () => {
+  const loadProfile = useCallback(
+    async (options: { silent?: boolean } = {}) => {
       if (!requestedId) {
-        setLoading(false);
+        if (!options.silent) {
+          setLoading(false);
+        }
         return;
       }
 
-      setLoading(true);
+      if (!options.silent) {
+        setLoading(true);
+      }
       setError(null);
 
-      const { profile: profileData, socialLinks: socialData, error: profileError } = await getProfileById(requestedId);
+      try {
+        const {
+          profile: profileData,
+          socialLinks: socialData,
+          error: profileError,
+        } = await getProfileById(requestedId);
 
-      if (profileError || !profileData) {
-        setError('Profile not found');
-        setLoading(false);
+        if (profileError || !profileData) {
+          setError('Profile not found');
+          setProfile(null);
+          setSocialLinks(null);
+          setPosts([]);
+          return;
+        }
+
+        setProfile(profileData);
+        setSocialLinks(socialData);
+
+        const { posts: postsData, error: postsError } = await getUserPosts(requestedId);
+
+        if (postsError) {
+          setError('Error loading posts');
+        } else {
+          setPosts(postsData);
+        }
+      } finally {
+        if (!options.silent) {
+          setLoading(false);
+        }
+      }
+    },
+    [requestedId],
+  );
+
+  useEffect(() => {
+    let isMounted = true;
+    hasLoadedRef.current = false;
+
+    loadProfile().finally(() => {
+      if (isMounted) {
+        hasLoadedRef.current = true;
+      }
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [loadProfile]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!hasLoadedRef.current) {
         return;
       }
 
-      setProfile(profileData);
-      setSocialLinks(socialData);
-
-      const { posts: postsData, error: postsError } = await getUserPosts(requestedId);
-
-      if (postsError) {
-        setError('Error loading posts');
-      } else {
-        setPosts(postsData);
-      }
-
-      setLoading(false);
-    };
-
-    loadProfile();
-  }, [requestedId]);
+      loadProfile({ silent: true });
+    }, [loadProfile]),
+  );
 
   const bannerSource = useMemo(
     () => resolveImageSource(socialLinks?.banner_url, FALLBACK_BANNER),
