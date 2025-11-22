@@ -1,10 +1,10 @@
 import '../src/polyfills';
 import '../src/utils/applyWebShadowPatch';
 
-import React, { useEffect, useState } from 'react';
-import { Stack, usePathname, useRouter } from 'expo-router';
+import React, { useEffect, useState, useRef } from 'react';
+import { Stack, usePathname, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { Platform, View } from 'react-native';
+import { Platform, View, ActivityIndicator, Text, StyleSheet } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useFonts } from 'expo-font';
 import { Inter_500Medium } from '@expo-google-fonts/inter';
@@ -17,18 +17,17 @@ import { supabase, supabaseReady } from '../src/lib/supabase';
 import Navigation from '../src/components/Navigation';
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 import { logger } from '../src/utils/logger';
-import { determinePostAuthRoute } from '../src/utils/authNavigation';
+import { determinePostAuthRoute, ROUTES } from '../src/utils/authNavigation';
 
 const RootLayout: React.FC = () => {
   const pathname = usePathname();
   const router = useRouter();
-  const normalizedPath = pathname ?? '/';
-  const isAuthRoute = normalizedPath.startsWith('/auth');
-  const isOnboardingRoute = normalizedPath.startsWith('/onboarding');
-  const isGetStartedRoute = normalizedPath === '/' || normalizedPath.length === 0;
-  const isPreauthRoute = isAuthRoute || isOnboardingRoute;
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const segments = useSegments();
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [fontsLoaded] = useFonts({ Inter_500Medium });
+  const navigationInitialized = useRef(false);
+  const lastAuthState = useRef<boolean | null>(null);
 
   useEffect(() => {
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
@@ -40,84 +39,103 @@ const RootLayout: React.FC = () => {
   }, [pathname]);
 
   useEffect(() => {
-    logger.info('App', 'RootLayout mounted', { supabaseReady });
-
-    const handleAuthError = async () => {
+    const checkInitialAuth = async () => {
       try {
         if (!supabaseReady) {
           logger.warn('App', 'Supabase not ready, skipping session check');
+          setIsCheckingAuth(false);
+          setIsAuthenticated(false);
           return;
         }
 
         const { data: { session }, error } = await supabase.auth.getSession();
-        setIsAuthenticated(!!session);
-        logger.info('Auth', 'Initial session check complete', { hasSession: !!session });
+        const hasSession = !!session;
+
+        setIsAuthenticated(hasSession);
+        lastAuthState.current = hasSession;
+        setIsCheckingAuth(false);
+
+        // Reduced logging
       } catch (err) {
         logger.error('Auth', 'Error checking session:', err);
+        setIsAuthenticated(false);
+        setIsCheckingAuth(false);
       }
     };
 
-    handleAuthError();
-  }, []);
+    checkInitialAuth();
+  }, [pathname, supabaseReady]);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event: AuthChangeEvent, session: Session | null) => {
-        setIsAuthenticated(!!session);
+      async (event: AuthChangeEvent, session: Session | null) => {
+        const hasSession = !!session;
+
+        if (lastAuthState.current === hasSession) {
+          return;
+        }
+
+        setIsAuthenticated(hasSession);
+        lastAuthState.current = hasSession;
+
+        if (event === 'SIGNED_IN' && hasSession) {
+          navigationInitialized.current = false;
+          const targetRoute = await determinePostAuthRoute();
+          router.replace(targetRoute ?? ROUTES.home);
+        } else if (event === 'SIGNED_OUT') {
+          navigationInitialized.current = false;
+          router.replace(ROUTES.auth);
+        }
       }
     );
     return () => {
       subscription.unsubscribe();
     };
-  }, []);
-
-  if (!fontsLoaded) {
-    // Avoid rendering before fonts load to ensure consistent typography
-    return null;
-  }
+  }, [router]);
 
   useEffect(() => {
-    if (!supabaseReady || !isAuthenticated) {
+    if (!fontsLoaded || isCheckingAuth || isAuthenticated === null) {
       return;
     }
 
-    if (!isPreauthRoute && !isGetStartedRoute) {
+    if (navigationInitialized.current) {
       return;
     }
 
-    let cancelled = false;
+    const currentSegment = segments[0];
+    const inAuthGroup = currentSegment === 'auth' || currentSegment === 'onboarding';
+    const onGetStarted = !currentSegment || currentSegment === 'index';
 
-    const redirectIfNeeded = async () => {
-      try {
-        const targetRoute = await determinePostAuthRoute();
-        if (!targetRoute || cancelled) {
-          return;
-        }
-        if (targetRoute !== normalizedPath) {
-          logger.info('Auth', 'Redirecting authenticated user based on profile state', {
-            targetRoute,
-            currentPath: normalizedPath,
-          });
-          router.replace(targetRoute);
-        }
-      } catch (error) {
-        logger.error('Auth', 'Redirect evaluation failed', error);
+    if (isAuthenticated) {
+      if (inAuthGroup || onGetStarted) {
+        navigationInitialized.current = true;
+        determinePostAuthRoute().then((targetRoute) => {
+          router.replace(targetRoute ?? ROUTES.home);
+        }).catch((error) => {
+          logger.error('Auth', 'Failed to determine post-auth route', error);
+          router.replace(ROUTES.home);
+        });
       }
-    };
+    } else {
+      if (!inAuthGroup && !onGetStarted) {
+        navigationInitialized.current = true;
+        router.replace(ROUTES.landing);
+      }
+    }
+  }, [isAuthenticated, segments, router, fontsLoaded, isCheckingAuth]);
 
-    redirectIfNeeded();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [isAuthenticated, isGetStartedRoute, isPreauthRoute, normalizedPath, router, supabaseReady]);
-
-  if (!fontsLoaded) {
-    // Avoid rendering before fonts load to ensure consistent typography
-    return null;
+  if (!fontsLoaded || isCheckingAuth || isAuthenticated === null) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#2563eb" />
+        <Text style={styles.loadingText}>Loading...</Text>
+      </View>
+    );
   }
 
-  const shouldShowNav = isAuthenticated && !isPreauthRoute && !isGetStartedRoute;
+  const inAuthGroup = segments[0] === 'auth' || segments[0] === 'onboarding';
+  const onGetStarted = !segments[0] || segments[0] === 'index';
+  const shouldShowNav = isAuthenticated && !inAuthGroup && !onGetStarted;
 
   return (
     <SafeAreaProvider>
@@ -143,5 +161,19 @@ const RootLayout: React.FC = () => {
     </SafeAreaProvider>
   );
 };
+
+const styles = StyleSheet.create({
+  loadingContainer: {
+    flex: 1,
+    backgroundColor: theme.colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    marginTop: 16,
+    color: '#94a3b8',
+    fontSize: 16,
+  },
+});
 
 export default RootLayout;

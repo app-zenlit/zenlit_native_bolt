@@ -92,7 +92,6 @@ const AuthScreen: React.FC = () => {
     }
 
     const maskedEmail = email.trim().replace(/(.{2})(.*)(@.*)/, '$1***$3');
-    logger.info('Auth', 'Attempting OTP signin', { email: maskedEmail });
 
     setEmailLoading(true);
 
@@ -129,8 +128,7 @@ const AuthScreen: React.FC = () => {
         return;
       }
 
-      logger.info('Auth', 'OTP request successful', { email: maskedEmail });
-      router.push(`/auth/verify-otp?email=${encodeURIComponent(email.trim())}`);
+      router.replace(`/auth/verify-otp?email=${encodeURIComponent(email.trim())}`);
     } catch (error: any) {
       logger.error('Auth', 'OTP signin exception', {
         email: maskedEmail,
