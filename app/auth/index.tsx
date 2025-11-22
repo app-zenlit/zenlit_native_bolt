@@ -130,7 +130,7 @@ const AuthScreen: React.FC = () => {
       }
 
       logger.info('Auth', 'OTP request successful', { email: maskedEmail });
-      router.push(`/auth/verify-otp?email=${encodeURIComponent(email.trim())}`);
+      router.replace(`/auth/verify-otp?email=${encodeURIComponent(email.trim())}`);
     } catch (error: any) {
       logger.error('Auth', 'OTP signin exception', {
         email: maskedEmail,

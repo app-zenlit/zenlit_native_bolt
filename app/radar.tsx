@@ -89,12 +89,11 @@ const RadarScreen: React.FC = () => {
     loadNearbyUsers(true);
   }, [loadNearbyUsers]);
 
-  // Handle back button on Android - refresh the list instead of navigating away
   useEffect(() => {
     const handleBackPress = () => {
       if (Platform.OS === 'android') {
-        loadNearbyUsers(true);
-        return true; // Prevent default back behavior
+        BackHandler.exitApp();
+        return true;
       }
       return false;
     };
@@ -103,7 +102,7 @@ const RadarScreen: React.FC = () => {
     return () => {
       subscription.remove();
     };
-  }, [loadNearbyUsers]);
+  }, []);
 
   const searchableUsers = useMemo<SearchableUser[]>(
     () =>

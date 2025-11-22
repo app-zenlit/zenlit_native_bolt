@@ -333,19 +333,10 @@ const OnboardingBasicScreen: React.FC = () => {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.topBar}>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => router.back()}
-              style={styles.backButton}
-            >
-              <Feather name="arrow-left" size={24} color="#ffffff" />
-            </Pressable>
-          </View>
-
           <View style={styles.brandSection}>
             <GradientTitle text="Zenlit" style={styles.brandTitle} />
-            <Text style={styles.brandSubtitle}>Let's set up your presence</Text>
+            <Text style={styles.brandSubtitle}>Step 1 of 2</Text>
+            <Text style={styles.onboardingSubtitle}>Let's set up your presence</Text>
           </View>
 
           <View style={styles.card}>
@@ -603,8 +594,16 @@ const styles = StyleSheet.create({
   },
   brandSubtitle: {
     marginTop: 6,
+    fontSize: 14,
+    color: '#2563eb',
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  onboardingSubtitle: {
+    marginTop: 4,
     fontSize: 16,
     color: '#94a3b8',
+    textAlign: 'center',
   },
   card: {
     width: '100%',

@@ -260,15 +260,11 @@ const CompleteProfileScreen: React.FC = () => {
       <StatusBar barStyle="light-content" backgroundColor="#000000" />
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <View style={styles.header}>
-          <Pressable
-            onPress={handleBack}
-            style={styles.headerButton}
-            accessibilityRole="button"
-            accessibilityLabel="Go back"
-          >
-            <Feather name="arrow-left" size={22} color="#ffffff" />
-          </Pressable>
-          <GradientTitle text="Complete your profile" style={styles.headerTitle} />
+          <View style={{ width: 44 }} />
+          <View style={styles.headerTitleContainer}>
+            <Text style={styles.stepIndicator}>Step 2 of 2</Text>
+            <GradientTitle text="Complete your profile" style={styles.headerTitle} />
+          </View>
           <View style={{ width: 44 }} />
         </View>
       </SafeAreaView>
@@ -513,6 +509,16 @@ const styles = StyleSheet.create({
   },
   headerButton: {
     width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(30, 41, 59, 0.6)',
+  },
+  headerTitleContainer: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  stepIndicator: {
+    fontSize: 12,
+    color: '#2563eb',
+    fontWeight: '600',
+    marginBottom: 4,
   },
   headerTitle: { fontSize: 24, fontWeight: '700', color: '#ffffff' },
   successBar: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#16a34a', paddingHorizontal: 16, paddingVertical: 10 },
