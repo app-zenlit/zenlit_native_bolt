@@ -50,8 +50,9 @@ export class RealtimeManager {
   }
 
   private log(message: string, ...args: any[]) {
-    const tag = this.config.logTag || 'RT:Chat';
-    logger.debug(tag, message, ...args);
+    // Disabled verbose logging - enable only for debugging
+    // const tag = this.config.logTag || 'RT:Chat';
+    // logger.debug(tag, message, ...args);
   }
 
   private calculateBackoff(): number {
@@ -73,7 +74,8 @@ export class RealtimeManager {
       this.unsubscribe();
     }
 
-    logger.info(this.config.logTag || 'RT:Chat', `Subscribing to conversation with ${filter.otherUserId} on private channel chat:${filter.currentUserId}`);
+    // Reduced logging - only log critical events
+    // logger.info(this.config.logTag || 'RT:Chat', `Subscribing to conversation with ${filter.otherUserId} on private channel chat:${filter.currentUserId}`);
 
     const { currentUserId, otherUserId } = filter;
 
@@ -163,7 +165,10 @@ export class RealtimeManager {
         }
       })
       .subscribe(async (status: string) => {
-        logger.info(this.config.logTag || 'RT:Chat', `Channel status: ${status}`);
+        // Only log errors and important state changes
+        if (status !== 'SUBSCRIBED' && status !== 'CLOSED') {
+          logger.info(this.config.logTag || 'RT:Chat', `Channel status: ${status}`);
+        }
 
         if (status === 'SUBSCRIBED') {
           this.isSubscribed = true;
@@ -205,10 +210,8 @@ export class RealtimeManager {
     handler: MessageEventHandler
   ): void {
     if (!this.channel) {
-      logger.info(this.config.logTag || 'RT:Chat', 'Creating channel for location updates');
+      // Reduced logging
       this.channel = supabase.channel(this.config.channelName);
-    } else {
-      this.log('Adding location updates to existing channel');
     }
 
     const { currentUserId, otherUserId } = filter;
@@ -243,7 +246,10 @@ export class RealtimeManager {
 
     if (this.channel && !this.isSubscribed) {
       this.channel.subscribe((status: string) => {
-        logger.info(this.config.logTag || 'RT:Chat', `Location channel status: ${status}`);
+        // Only log non-normal statuses
+        if (status !== 'SUBSCRIBED' && status !== 'CLOSED') {
+          logger.info(this.config.logTag || 'RT:Chat', `Location channel status: ${status}`);
+        }
         if (status === 'SUBSCRIBED') {
           this.isSubscribed = true;
         }
@@ -306,7 +312,8 @@ export class RealtimeManager {
       return;
     }
 
-    logger.info(this.config.logTag || 'RT:Chat', 'Unsubscribing channel');
+    // Reduced logging
+    // logger.info(this.config.logTag || 'RT:Chat', 'Unsubscribing channel');
 
     // Early state reset to avoid races where this.channel becomes null
     this.channel = null;

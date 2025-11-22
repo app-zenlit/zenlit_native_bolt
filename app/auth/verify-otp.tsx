@@ -78,7 +78,6 @@ export default function VerifyOTPScreen() {
     }
 
     const maskedEmail = (email || '').replace(/(.{2})(.*)(@.*)/, '$1***$3');
-    logger.info('Auth', 'Attempting OTP verification', { email: maskedEmail });
 
     setVerifying(true);
     setError('');
@@ -112,8 +111,6 @@ export default function VerifyOTPScreen() {
       }
 
       if (data.user) {
-        logger.info('Auth', 'OTP verification successful', { userId: data.user.id });
-
         const targetRoute = await determinePostAuthRoute({ userId: data.user.id });
         // Use replace to prevent going back to OTP screen
         router.replace(targetRoute ?? '/onboarding/profile/basic');
@@ -138,7 +135,6 @@ export default function VerifyOTPScreen() {
     }
 
     const maskedEmail = (email || '').replace(/(.{2})(.*)(@.*)/, '$1***$3');
-    logger.info('Auth', 'Resending OTP code', { email: maskedEmail });
 
     setResending(true);
     setError('');
@@ -169,7 +165,6 @@ export default function VerifyOTPScreen() {
         return;
       }
 
-      logger.info('Auth', 'OTP resend successful', { email: maskedEmail });
       setStatus('We sent a new code to your inbox.');
       startCooldown(COOLDOWN_SECONDS);
       setResending(false);

@@ -39,8 +39,6 @@ const RootLayout: React.FC = () => {
   }, [pathname]);
 
   useEffect(() => {
-    logger.info('App', 'RootLayout mounted', { supabaseReady });
-
     const checkInitialAuth = async () => {
       try {
         if (!supabaseReady) {
@@ -57,10 +55,7 @@ const RootLayout: React.FC = () => {
         lastAuthState.current = hasSession;
         setIsCheckingAuth(false);
 
-        logger.info('Auth', 'Initial session check complete', {
-          hasSession,
-          pathname: pathname || '/',
-        });
+        // Reduced logging
       } catch (err) {
         logger.error('Auth', 'Error checking session:', err);
         setIsAuthenticated(false);
@@ -76,12 +71,6 @@ const RootLayout: React.FC = () => {
       async (event: AuthChangeEvent, session: Session | null) => {
         const hasSession = !!session;
 
-        logger.info('Auth', 'Auth state changed', {
-          event,
-          hasSession,
-          previousState: lastAuthState.current,
-        });
-
         if (lastAuthState.current === hasSession) {
           return;
         }
@@ -92,11 +81,9 @@ const RootLayout: React.FC = () => {
         if (event === 'SIGNED_IN' && hasSession) {
           navigationInitialized.current = false;
           const targetRoute = await determinePostAuthRoute();
-          logger.info('Auth', 'User signed in, navigating to', { targetRoute });
           router.replace(targetRoute ?? ROUTES.home);
         } else if (event === 'SIGNED_OUT') {
           navigationInitialized.current = false;
-          logger.info('Auth', 'User signed out, navigating to auth');
           router.replace(ROUTES.auth);
         }
       }
@@ -119,18 +106,10 @@ const RootLayout: React.FC = () => {
     const inAuthGroup = currentSegment === 'auth' || currentSegment === 'onboarding';
     const onGetStarted = !currentSegment || currentSegment === 'index';
 
-    logger.info('App', 'Navigation guard check', {
-      isAuthenticated,
-      currentSegment,
-      inAuthGroup,
-      onGetStarted,
-    });
-
     if (isAuthenticated) {
       if (inAuthGroup || onGetStarted) {
         navigationInitialized.current = true;
         determinePostAuthRoute().then((targetRoute) => {
-          logger.info('Auth', 'Redirecting authenticated user', { targetRoute });
           router.replace(targetRoute ?? ROUTES.home);
         }).catch((error) => {
           logger.error('Auth', 'Failed to determine post-auth route', error);
@@ -140,7 +119,6 @@ const RootLayout: React.FC = () => {
     } else {
       if (!inAuthGroup && !onGetStarted) {
         navigationInitialized.current = true;
-        logger.info('Auth', 'Redirecting unauthenticated user to get started');
         router.replace(ROUTES.landing);
       }
     }
