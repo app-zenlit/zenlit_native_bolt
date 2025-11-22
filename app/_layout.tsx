@@ -82,14 +82,20 @@ const RootLayout: React.FC = () => {
           previousState: lastAuthState.current,
         });
 
+        if (lastAuthState.current === hasSession) {
+          return;
+        }
+
         setIsAuthenticated(hasSession);
         lastAuthState.current = hasSession;
 
         if (event === 'SIGNED_IN' && hasSession) {
+          navigationInitialized.current = false;
           const targetRoute = await determinePostAuthRoute();
           logger.info('Auth', 'User signed in, navigating to', { targetRoute });
           router.replace(targetRoute ?? ROUTES.home);
         } else if (event === 'SIGNED_OUT') {
+          navigationInitialized.current = false;
           logger.info('Auth', 'User signed out, navigating to auth');
           router.replace(ROUTES.auth);
         }
@@ -101,16 +107,21 @@ const RootLayout: React.FC = () => {
   }, [router]);
 
   useEffect(() => {
-    if (!fontsLoaded || isCheckingAuth || isAuthenticated === null || navigationInitialized.current) {
+    if (!fontsLoaded || isCheckingAuth || isAuthenticated === null) {
       return;
     }
 
-    const inAuthGroup = segments[0] === 'auth' || segments[0] === 'onboarding';
-    const onGetStarted = !segments[0] || segments[0] === 'index';
+    if (navigationInitialized.current) {
+      return;
+    }
+
+    const currentSegment = segments[0];
+    const inAuthGroup = currentSegment === 'auth' || currentSegment === 'onboarding';
+    const onGetStarted = !currentSegment || currentSegment === 'index';
 
     logger.info('App', 'Navigation guard check', {
       isAuthenticated,
-      segments: segments.join('/'),
+      currentSegment,
       inAuthGroup,
       onGetStarted,
     });
