@@ -11,6 +11,7 @@ import { Inter_500Medium } from '@expo-google-fonts/inter';
 
 import { VisibilityProvider } from '../src/contexts/VisibilityContext';
 import { MessagingProvider } from '../src/contexts/MessagingContext';
+import { ProfileProvider } from '@/src/contexts/ProfileContext';
 import { theme } from '../src/styles/theme';
 import { supabase, supabaseReady } from '../src/lib/supabase';
 import Navigation from '../src/components/Navigation';
@@ -21,7 +22,12 @@ import { determinePostAuthRoute } from '../src/utils/authNavigation';
 const RootLayout: React.FC = () => {
   const pathname = usePathname();
   const router = useRouter();
-  const [isReady, setIsReady] = useState(false);
+  const normalizedPath = pathname ?? '/';
+  const isAuthRoute = normalizedPath.startsWith('/auth');
+  const isOnboardingRoute = normalizedPath.startsWith('/onboarding');
+  const isGetStartedRoute = normalizedPath === '/' || normalizedPath.length === 0;
+  const isPreauthRoute = isAuthRoute || isOnboardingRoute;
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [fontsLoaded] = useFonts({ Inter_500Medium });
 
   useEffect(() => {
@@ -34,85 +40,104 @@ const RootLayout: React.FC = () => {
   }, [pathname]);
 
   useEffect(() => {
-    const initializeApp = async () => {
+    logger.info('App', 'RootLayout mounted', { supabaseReady });
+
+    const handleAuthError = async () => {
       try {
         if (!supabaseReady) {
-          logger.warn('App', 'Supabase not ready, waiting...');
-          // In a real app we might want to wait or show an error, 
-          // but for now we'll proceed to let the UI handle it or retry.
+          logger.warn('App', 'Supabase not ready, skipping session check');
+          return;
         }
 
-        const { data: { session } } = await supabase.auth.getSession();
-
-        if (session?.user) {
-          // User is authenticated, determine where they should go
-          const targetRoute = await determinePostAuthRoute({ userId: session.user.id });
-          if (targetRoute) {
-            logger.info('App', 'Redirecting initial load', { targetRoute });
-            router.replace(targetRoute);
-          }
-        }
-      } catch (e) {
-        logger.error('App', 'Initialization error', e);
-      } finally {
-        setIsReady(true);
+        const { data: { session }, error } = await supabase.auth.getSession();
+        setIsAuthenticated(!!session);
+        logger.info('Auth', 'Initial session check complete', { hasSession: !!session });
+      } catch (err) {
+        logger.error('Auth', 'Error checking session:', err);
       }
     };
 
-    if (fontsLoaded) {
-      initializeApp();
-    }
-  }, [fontsLoaded]);
+    handleAuthError();
+  }, []);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event: AuthChangeEvent, session: Session | null) => {
-        if (event === 'SIGNED_OUT') {
-          router.replace('/auth');
-        } else if (event === 'SIGNED_IN' && session) {
-          // When signing in (e.g. from a deep link or just a state change), 
-          // we might want to re-evaluate routing if we are on a public screen
-          const current = pathname ?? '/';
-          if (current === '/' || current.startsWith('/auth')) {
-            const targetRoute = await determinePostAuthRoute({ userId: session.user.id });
-            if (targetRoute) router.replace(targetRoute);
-          }
-        }
+      (event: AuthChangeEvent, session: Session | null) => {
+        setIsAuthenticated(!!session);
       }
     );
     return () => {
       subscription.unsubscribe();
     };
-  }, [pathname]);
+  }, []);
 
-  if (!fontsLoaded || !isReady) {
-    return null; // Or a splash screen component
+  if (!fontsLoaded) {
+    // Avoid rendering before fonts load to ensure consistent typography
+    return null;
   }
 
-  // Simple check for showing nav: only show if we are NOT in auth/onboarding/root
-  // This is a visual helper, actual protection is done by RLS and logic above
-  const isPublicRoute = (pathname === '/' || pathname?.startsWith('/auth') || pathname?.startsWith('/onboarding'));
-  const shouldShowNav = !isPublicRoute;
+  useEffect(() => {
+    if (!supabaseReady || !isAuthenticated) {
+      return;
+    }
+
+    if (!isPreauthRoute && !isGetStartedRoute) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const redirectIfNeeded = async () => {
+      try {
+        const targetRoute = await determinePostAuthRoute();
+        if (!targetRoute || cancelled) {
+          return;
+        }
+        if (targetRoute !== normalizedPath) {
+          logger.info('Auth', 'Redirecting authenticated user based on profile state', {
+            targetRoute,
+            currentPath: normalizedPath,
+          });
+          router.replace(targetRoute);
+        }
+      } catch (error) {
+        logger.error('Auth', 'Redirect evaluation failed', error);
+      }
+    };
+
+    redirectIfNeeded();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, isGetStartedRoute, isPreauthRoute, normalizedPath, router, supabaseReady]);
+
+  if (!fontsLoaded) {
+    // Avoid rendering before fonts load to ensure consistent typography
+    return null;
+  }
+
+  const shouldShowNav = isAuthenticated && !isPreauthRoute && !isGetStartedRoute;
 
   return (
     <SafeAreaProvider>
       <VisibilityProvider>
         <MessagingProvider>
-          <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
-            <StatusBar style="light" backgroundColor={theme.colors.background} />
-            <Stack
-              screenOptions={{
-                headerShown: false,
-                contentStyle: { backgroundColor: theme.colors.background },
-                animation: 'fade', // Smooth transitions
-              }}
-            >
-              <Stack.Screen name="index" options={{ headerShown: false }} />
-              <Stack.Screen name="auth" options={{ headerShown: false }} />
-              <Stack.Screen name="onboarding" options={{ headerShown: false }} />
-            </Stack>
-            {shouldShowNav ? <Navigation /> : null}
-          </View>
+          <ProfileProvider>
+            <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
+              <StatusBar style="light" backgroundColor={theme.colors.background} />
+              <Stack
+                screenOptions={{
+                  headerShown: false,
+                  contentStyle: { backgroundColor: theme.colors.background },
+                }}
+              >
+                {/** Ensure Get Started (index) is fully immersive: no header */}
+                <Stack.Screen name="index" options={{ headerShown: false }} />
+              </Stack>
+              {shouldShowNav ? <Navigation /> : null}
+            </View>
+          </ProfileProvider>
         </MessagingProvider>
       </VisibilityProvider>
     </SafeAreaProvider>

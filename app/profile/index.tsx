@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -26,7 +26,8 @@ import {
   ensureSocialUrl,
   getTwitterHandle,
 } from '../../src/constants/socialPlatforms';
-import { getCurrentUserProfile, getUserPosts, deletePost as deletePostDb, Profile, SocialLinks, Post as PostType } from '../../src/services';
+import { getUserPosts, deletePost as deletePostDb, Post as PostType } from '../../src/services';
+import { useProfile } from '@/src/contexts/ProfileContext';
 import { supabase } from '../../src/lib/supabase';
 import { getPostLogoutRoute } from '../../src/utils/authNavigation';
 
@@ -63,67 +64,32 @@ const ProfileScreen: React.FC = () => {
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
   const [logoutOpen, setLogoutOpen] = useState(false);
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [socialLinks, setSocialLinks] = useState<SocialLinks | null>(null);
+  const { profile, socialLinks, isRefreshing, error, refresh } = useProfile();
   const [posts, setPosts] = useState<PostType[]>([]);
   const [loading, setLoading] = useState(true);
-  const hasLoadedRef = useRef(false);
   const { width } = useWindowDimensions();
   const headerGap = width < 360 ? 10 : width < 768 ? 12 : 14;
   const bannerMargin = 32 + headerGap; // avatar overhang (92 - 60) + dynamic gap
-  const loadUserData = useCallback(
-    async (options: { silent?: boolean } = {}) => {
-      if (!options.silent) {
-        setLoading(true);
-      }
-
-      try {
-        const { profile: userProfile, socialLinks: userSocialLinks } = await getCurrentUserProfile();
-
-        if (userProfile) {
-          setProfile(userProfile);
-          setSocialLinks(userSocialLinks);
-
-          const { posts: userPosts } = await getUserPosts(userProfile.id);
-          setPosts(userPosts);
-        } else {
-          setProfile(null);
-          setSocialLinks(null);
-          setPosts([]);
-        }
-      } finally {
-        if (!options.silent) {
-          setLoading(false);
-        }
-      }
-    },
-    [],
-  );
-
-  useEffect(() => {
-    let isMounted = true;
-    hasLoadedRef.current = false;
-
-    loadUserData().finally(() => {
-      if (isMounted) {
-        hasLoadedRef.current = true;
-      }
-    });
-
-    return () => {
-      isMounted = false;
-    };
-  }, [loadUserData]);
 
   useFocusEffect(
     useCallback(() => {
-      if (!hasLoadedRef.current) {
-        return;
-      }
-
-      loadUserData({ silent: true });
-    }, [loadUserData]),
+      refresh(false);
+      return undefined;
+    }, [refresh])
   );
+
+  useEffect(() => {
+    if (!profile?.id) {
+      setLoading(isRefreshing);
+      return;
+    }
+    (async () => {
+      setLoading(true);
+      const { posts: userPosts } = await getUserPosts(profile.id);
+      setPosts(userPosts);
+      setLoading(false);
+    })();
+  }, [profile?.id]);
 
   const socialEntries = useMemo(() => {
     if (!socialLinks) {
@@ -225,7 +191,7 @@ const ProfileScreen: React.FC = () => {
     [handleDeletePost, profile, avatarUri, socialLinks],
   );
 
-  if (loading) {
+  if (loading || (isRefreshing && !profile)) {
     return (
       <View style={styles.root}>
         <StatusBar barStyle="light-content" backgroundColor="#000000" />
@@ -245,7 +211,7 @@ const ProfileScreen: React.FC = () => {
         <StatusBar barStyle="light-content" backgroundColor="#000000" />
         <AppHeader title="Profile" />
         <View style={styles.loadingContainer}>
-          <Text style={styles.errorText}>Failed to load profile</Text>
+          <Text style={styles.errorText}>{error || 'Failed to load profile'}</Text>
         </View>
         {/* Navigation is now rendered in the root layout */}
       </View>

@@ -8,10 +8,12 @@ import { SOCIAL_PLATFORMS, extractUsername } from '../src/constants/socialPlatfo
 import GradientTitle from '../src/components/GradientTitle';
 import { supabase } from '../src/lib/supabase';
 import { getCurrentUserProfile, updateSocialLinks, uploadImage, deleteImageFromStorage, updateProfileDisplayName } from '../src/services';
+import { useProfile } from '@/src/contexts/ProfileContext';
 import { compressImage, MAX_IMAGE_SIZE_BYTES, base64ToUint8Array, type CompressedImage } from '../src/utils/imageCompression';
 
 const EditProfileScreen: React.FC = () => {
   const router = useRouter();
+  const { refresh } = useProfile();
 
   const [loading, setLoading] = useState(true);
   const [displayName, setDisplayName] = useState('');
@@ -344,6 +346,7 @@ const EditProfileScreen: React.FC = () => {
       setDisplayName(trimmedDisplayName);
       setOriginalDisplayName(trimmedDisplayName);
 
+      await refresh(true);
       showToastMessage('Profile updated successfully.', 'success');
 
       if (warnings.length > 0) {
