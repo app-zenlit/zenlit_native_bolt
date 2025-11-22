@@ -4,6 +4,7 @@ import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-nativ
 import { useVisibility } from '../contexts/VisibilityContext';
 import { getFeedPosts, PostWithAuthor } from '../services';
 import Post from './Post';
+import { AnimatedStatusView } from './AnimatedStatusView';
 
 type FeedListProps = {
   refreshSignal?: number;
@@ -74,6 +75,16 @@ export const FeedList: React.FC<FeedListProps> = ({ refreshSignal }) => {
     };
   };
 
+  if (!isVisible || locationPermissionDenied) {
+    return (
+      <AnimatedStatusView
+        title="Visibility Off"
+        subtitle="Enable to see posts"
+        icon="eye-off"
+      />
+    );
+  }
+
   if (loading || locationStatus === 'fetching' || locationStatus === 'not-attempted') {
     return (
       <View style={[styles.container, styles.centerContent]}>
@@ -92,15 +103,6 @@ export const FeedList: React.FC<FeedListProps> = ({ refreshSignal }) => {
       <View style={[styles.container, styles.centerContent]}>
         <Text style={styles.errorText}>Error loading feed</Text>
         <Text style={styles.errorDetail}>{error}</Text>
-      </View>
-    );
-  }
-
-  if (!isVisible || locationPermissionDenied) {
-    return (
-      <View style={[styles.container, styles.centerContent]}>
-        <Text style={styles.emptyText}>Location visibility required</Text>
-        <Text style={styles.emptySubtext}>Enable visibility to see nearby posts</Text>
       </View>
     );
   }
@@ -127,15 +129,6 @@ export const FeedList: React.FC<FeedListProps> = ({ refreshSignal }) => {
     );
   }
 
-  if (posts.length === 0) {
-    return (
-      <View style={[styles.container, styles.centerContent]}>
-        <Text style={styles.emptyText}>No posts nearby</Text>
-        <Text style={styles.emptySubtext}>No posts from nearby users yet</Text>
-      </View>
-    );
-  }
-
   return (
     <View style={styles.container}>
       <FlatList
@@ -145,9 +138,16 @@ export const FeedList: React.FC<FeedListProps> = ({ refreshSignal }) => {
           <Post post={convertPostToFeedFormat(item)} selectedAccounts={selectedAccounts} showTimestamp={false} />
         )}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { flexGrow: 1 }]}
         onRefresh={loadPosts}
         refreshing={loading}
+        ListEmptyComponent={
+          <AnimatedStatusView
+            title="No posts nearby"
+            subtitle="Be the first to post"
+            icon="file-text"
+          />
+        }
       />
     </View>
   );

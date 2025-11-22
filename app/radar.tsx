@@ -21,6 +21,7 @@ import { useVisibility } from '../src/contexts/VisibilityContext';
 import { theme } from '../src/styles/theme';
 import { getNearbyUsers, type NearbyUserData } from '../src/services';
 import { supabase } from '../src/lib/supabase';
+import { AnimatedStatusView } from '../src/components/AnimatedStatusView';
 
 const SEARCH_DEBOUNCE_DELAY = 120;
 const REALTIME_DEBOUNCE_DELAY = 500;
@@ -304,19 +305,17 @@ const RadarScreen: React.FC = () => {
       ) : null}
 
       {locationPermissionDenied ? (
-        <View style={styles.centerContainer}>
-          <Text style={styles.warningText}>Location access is needed</Text>
-          <Text style={styles.warningDetail}>
-            Turn on location access to see nearby users.
-          </Text>
-        </View>
+        <AnimatedStatusView
+          title="Location Required"
+          subtitle="Enable to see nearby"
+          icon="map-pin"
+        />
       ) : !isVisible ? (
-        <View style={styles.centerContainer}>
-          <Text style={styles.warningText}>Radar visibility is off</Text>
-          <Text style={styles.warningDetail}>
-            Turn on visibility to appear on radar and see nearby users.
-          </Text>
-        </View>
+        <AnimatedStatusView
+          title="Visibility Off"
+          subtitle="Enable to see others"
+          icon="eye-off"
+        />
       ) : loading ? (
         <View style={styles.centerContainer}>
           <ActivityIndicator size="large" color="#60a5fa" />
@@ -339,6 +338,7 @@ const RadarScreen: React.FC = () => {
             />
           )}
           contentContainerStyle={{
+            flexGrow: 1,
             paddingHorizontal: theme.spacing.lg,
             paddingBottom: 160 + Math.max(insets.bottom, 12),
             paddingTop: theme.spacing.sm,
@@ -347,19 +347,17 @@ const RadarScreen: React.FC = () => {
           keyboardShouldPersistTaps="handled"
           ListEmptyComponent={
             hasQuery ? (
-              <View style={styles.listEmpty}>
-                <Text style={styles.listEmptyTitle}>No users found</Text>
-                <Text style={styles.listEmptySubtitle}>
-                  Try a different name or handle.
-                </Text>
-              </View>
+              <AnimatedStatusView
+                title="No users found"
+                subtitle="Try different keywords"
+                icon="search"
+              />
             ) : (
-              <View style={styles.listEmpty}>
-                <Text style={styles.listEmptyTitle}>No nearby users</Text>
-                <Text style={styles.listEmptySubtitle}>
-                  No one is visible within your area at the moment.
-                </Text>
-              </View>
+              <AnimatedStatusView
+                title="No nearby users"
+                subtitle="No one is visible"
+                icon="users"
+              />
             )
           }
         />
