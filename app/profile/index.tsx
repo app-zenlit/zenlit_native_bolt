@@ -27,7 +27,7 @@ import {
   getTwitterHandle,
 } from '../../src/constants/socialPlatforms';
 import { getUserPosts, deletePost as deletePostDb, Post as PostType } from '../../src/services';
-import { useProfile } from '@/src/contexts/ProfileContext';
+import { useProfile } from '../../src/contexts/ProfileContext';
 import { supabase } from '../../src/lib/supabase';
 import { getPostLogoutRoute } from '../../src/utils/authNavigation';
 

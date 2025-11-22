@@ -8,7 +8,7 @@ import { SOCIAL_PLATFORMS, extractUsername } from '../src/constants/socialPlatfo
 import GradientTitle from '../src/components/GradientTitle';
 import { supabase } from '../src/lib/supabase';
 import { getCurrentUserProfile, updateSocialLinks, uploadImage, deleteImageFromStorage, updateProfileDisplayName } from '../src/services';
-import { useProfile } from '@/src/contexts/ProfileContext';
+import { useProfile } from '../src/contexts/ProfileContext';
 import { compressImage, MAX_IMAGE_SIZE_BYTES, base64ToUint8Array, type CompressedImage } from '../src/utils/imageCompression';
 
 const EditProfileScreen: React.FC = () => {

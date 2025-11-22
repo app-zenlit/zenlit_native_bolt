@@ -8,16 +8,28 @@ import { Platform, View, ActivityIndicator, Text, StyleSheet } from 'react-nativ
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useFonts } from 'expo-font';
 import { Inter_500Medium } from '@expo-google-fonts/inter';
+import * as Notifications from 'expo-notifications';
 
 import { VisibilityProvider } from '../src/contexts/VisibilityContext';
 import { MessagingProvider } from '../src/contexts/MessagingContext';
-import { ProfileProvider } from '@/src/contexts/ProfileContext';
+import { ProfileProvider } from '../src/contexts/ProfileContext';
 import { theme } from '../src/styles/theme';
 import { supabase, supabaseReady } from '../src/lib/supabase';
 import Navigation from '../src/components/Navigation';
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 import { logger } from '../src/utils/logger';
 import { determinePostAuthRoute, ROUTES } from '../src/utils/authNavigation';
+import { useNotifications } from '../src/hooks/useNotifications';
+import { checkForAppUpdate, markUpdateDismissed, type AppVersion } from '../src/services/appVersionService';
+import { AppUpdateModal } from '../src/components/AppUpdateModal';
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+  }),
+});
 
 const RootLayout: React.FC = () => {
   const pathname = usePathname();
@@ -28,6 +40,10 @@ const RootLayout: React.FC = () => {
   const [fontsLoaded] = useFonts({ Inter_500Medium });
   const navigationInitialized = useRef(false);
   const lastAuthState = useRef<boolean | null>(null);
+  const { notification } = useNotifications();
+  const [updateModalVisible, setUpdateModalVisible] = useState(false);
+  const [updateVersion, setUpdateVersion] = useState<AppVersion | null>(null);
+  const [isCriticalUpdate, setIsCriticalUpdate] = useState(false);
 
   useEffect(() => {
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
@@ -94,6 +110,42 @@ const RootLayout: React.FC = () => {
   }, [router]);
 
   useEffect(() => {
+    if (isAuthenticated && Platform.OS !== 'web') {
+      checkForAppUpdate().then(({ hasUpdate, isCritical, version }) => {
+        if (hasUpdate && version) {
+          setUpdateVersion(version);
+          setIsCriticalUpdate(isCritical);
+          setUpdateModalVisible(true);
+        }
+      });
+    }
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (notification && notification.request.content.data) {
+      const data = notification.request.content.data;
+      logger.info('Notification', 'Received notification in foreground:', data);
+
+      if (data.type === 'message' && data.senderId) {
+        router.push(`/messages/${data.senderId}`);
+      } else if (data.type === 'proximity') {
+        router.push('/radar');
+      } else if (data.type === 'app_update') {
+        logger.info('Notification', 'App update notification received');
+        if (data.versionId && data.isCritical) {
+          checkForAppUpdate().then(({ hasUpdate, isCritical, version }) => {
+            if (hasUpdate && version) {
+              setUpdateVersion(version);
+              setIsCriticalUpdate(isCritical);
+              setUpdateModalVisible(true);
+            }
+          });
+        }
+      }
+    }
+  }, [notification, router]);
+
+  useEffect(() => {
     if (!fontsLoaded || isCheckingAuth || isAuthenticated === null) {
       return;
     }
@@ -137,6 +189,13 @@ const RootLayout: React.FC = () => {
   const onGetStarted = !segments[0] || segments[0] === 'index';
   const shouldShowNav = isAuthenticated && !inAuthGroup && !onGetStarted;
 
+  const handleDismissUpdate = () => {
+    if (updateVersion && !isCriticalUpdate) {
+      markUpdateDismissed(updateVersion.id);
+      setUpdateModalVisible(false);
+    }
+  };
+
   return (
     <SafeAreaProvider>
       <VisibilityProvider>
@@ -154,6 +213,13 @@ const RootLayout: React.FC = () => {
                 <Stack.Screen name="index" options={{ headerShown: false }} />
               </Stack>
               {shouldShowNav ? <Navigation /> : null}
+
+              <AppUpdateModal
+                visible={updateModalVisible}
+                version={updateVersion}
+                isCritical={isCriticalUpdate}
+                onDismiss={handleDismissUpdate}
+              />
             </View>
           </ProfileProvider>
         </MessagingProvider>
