@@ -2,7 +2,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { logger } from '../src/utils/logger';
 import {
   ActivityIndicator,
+  BackHandler,
   FlatList,
+  Platform,
   StatusBar,
   StyleSheet,
   Text,
@@ -85,6 +87,22 @@ const RadarScreen: React.FC = () => {
 
   useEffect(() => {
     loadNearbyUsers(true);
+  }, [loadNearbyUsers]);
+
+  // Handle back button on Android - refresh the list instead of navigating away
+  useEffect(() => {
+    const handleBackPress = () => {
+      if (Platform.OS === 'android') {
+        loadNearbyUsers(true);
+        return true; // Prevent default back behavior
+      }
+      return false;
+    };
+
+    const subscription = BackHandler.addEventListener('hardwareBackPress', handleBackPress);
+    return () => {
+      subscription.remove();
+    };
   }, [loadNearbyUsers]);
 
   const searchableUsers = useMemo<SearchableUser[]>(
@@ -312,40 +330,40 @@ const RadarScreen: React.FC = () => {
         </View>
       ) : (
         <FlatList
-        data={filteredUsers}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <SocialProfileCard
-            user={item}
-            selectedAccounts={selectedAccounts}
-            borderRadius={10}
-          />
-        )}
-        contentContainerStyle={{
-          paddingHorizontal: theme.spacing.lg,
-          paddingBottom: 160 + Math.max(insets.bottom, 12),
-          paddingTop: theme.spacing.sm,
-        }}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        ListEmptyComponent={
-          hasQuery ? (
-            <View style={styles.listEmpty}>
-              <Text style={styles.listEmptyTitle}>No users found</Text>
-              <Text style={styles.listEmptySubtitle}>
-                Try a different name or handle.
-              </Text>
-            </View>
-          ) : (
-            <View style={styles.listEmpty}>
-              <Text style={styles.listEmptyTitle}>No nearby users</Text>
-              <Text style={styles.listEmptySubtitle}>
-                No one is visible within your area at the moment.
-              </Text>
-            </View>
-          )
-        }
-      />
+          data={filteredUsers}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <SocialProfileCard
+              user={item}
+              selectedAccounts={selectedAccounts}
+              borderRadius={10}
+            />
+          )}
+          contentContainerStyle={{
+            paddingHorizontal: theme.spacing.lg,
+            paddingBottom: 160 + Math.max(insets.bottom, 12),
+            paddingTop: theme.spacing.sm,
+          }}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          ListEmptyComponent={
+            hasQuery ? (
+              <View style={styles.listEmpty}>
+                <Text style={styles.listEmptyTitle}>No users found</Text>
+                <Text style={styles.listEmptySubtitle}>
+                  Try a different name or handle.
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.listEmpty}>
+                <Text style={styles.listEmptyTitle}>No nearby users</Text>
+                <Text style={styles.listEmptySubtitle}>
+                  No one is visible within your area at the moment.
+                </Text>
+              </View>
+            )
+          }
+        />
       )}
 
       {/* Navigation is now rendered in the root layout */}

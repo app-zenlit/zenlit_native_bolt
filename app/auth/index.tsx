@@ -51,26 +51,10 @@ const AuthScreen: React.FC = () => {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [emailLoading, setEmailLoading] = useState(false);
-  const [isTransitioning, setIsTransitioning] = useState(false);
 
   const cardOpacity = useRef(new Animated.Value(0)).current;
   const cardTranslate = useRef(new Animated.Value(24)).current;
   const cardScale = useRef(new Animated.Value(0.98)).current;
-
-  useFocusEffect(
-    useCallback(() => {
-      const handleBackPress = () => {
-        if (Platform.OS === 'android') {
-          BackHandler.exitApp();
-        }
-        return true;
-      };
-      const subscription = BackHandler.addEventListener('hardwareBackPress', handleBackPress);
-      return () => {
-        subscription.remove();
-      };
-    }, [])
-  );
 
   useEffect(() => {
     Animated.parallel([
@@ -195,32 +179,7 @@ const AuthScreen: React.FC = () => {
             ]}
           >
             <Text style={styles.cardTitle}>Welcome</Text>
-
-
-            <View style={styles.dividerRow}>
-              <LinearGradient
-                colors={DIVIDER_LINE_COLORS}
-                start={{ x: 0, y: 0.5 }}
-                end={{ x: 1, y: 0.5 }}
-                style={styles.dividerLine}
-              />
-              <View style={styles.dividerBadge}>
-                <LinearGradient
-                  colors={DIVIDER_BADGE_COLORS}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.dividerBadgeGradient}
-                >
-                  <Text style={styles.dividerLabel}>Continue with email</Text>
-                </LinearGradient>
-              </View>
-              <LinearGradient
-                colors={DIVIDER_LINE_COLORS}
-                start={{ x: 0, y: 0.5 }}
-                end={{ x: 1, y: 0.5 }}
-                style={styles.dividerLine}
-              />
-            </View>
+            <Text style={styles.cardSubtitle}>Enter your email to continue</Text>
 
             <View style={styles.inputBlock}>
               <Text style={styles.inputLabel}>Email Address</Text>
@@ -287,126 +246,98 @@ const styles = StyleSheet.create({
   },
   brandSection: {
     alignItems: 'center',
-    marginBottom: 32,
+    marginBottom: 40,
   },
   brandTitle: {
-    fontSize: 40,
-    // Use Inter Medium for platform-consistent medium weight
+    fontSize: 48,
     fontFamily: 'Inter_500Medium',
-    letterSpacing: -0.8,
+    letterSpacing: -1,
     textAlign: 'center',
   },
   brandSubtitle: {
-    marginTop: 6,
+    marginTop: 8,
     fontSize: 16,
     color: '#94a3b8',
+    letterSpacing: -0.2,
   },
   card: {
     width: '100%',
-    maxWidth: 360,
+    maxWidth: 400,
     paddingHorizontal: 24,
-    paddingVertical: 28,
+    paddingVertical: 32,
     borderRadius: 24,
-    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    backgroundColor: 'rgba(15, 23, 42, 0.6)',
     borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.35)',
+    borderColor: 'rgba(148, 163, 184, 0.2)',
     ...CARD_ELEVATION,
     alignItems: 'center',
   },
   cardTitle: {
-    fontSize: 24,
-    fontWeight: '600',
+    fontSize: 28,
+    fontWeight: '700',
     color: '#ffffff',
-    marginBottom: 10,
-    letterSpacing: 0.2,
+    marginBottom: 8,
+    letterSpacing: -0.5,
   },
   cardSubtitle: {
-    fontSize: 14,
-    color: '#cbd5f5',
+    fontSize: 15,
+    color: '#94a3b8',
     textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: 28,
-    paddingHorizontal: 12,
-  },
-  dividerRow: {
-    marginTop: 12,
     marginBottom: 32,
-    flexDirection: 'row',
-    alignItems: 'center',
-    width: '100%',
-  },
-  dividerLine: {
-    flex: 1,
-    height: 2,
-    borderRadius: 999,
-    opacity: 0.9,
-  },
-  dividerBadge: {
-    borderRadius: 999,
-    overflow: 'hidden',
-    marginHorizontal: 12,
-  },
-  dividerBadgeGradient: {
-    borderRadius: 999,
-    paddingHorizontal: 18,
-    paddingVertical: 8,
-  },
-  dividerLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#e2e8f0',
-    textTransform: 'uppercase',
-    letterSpacing: 1.4,
   },
   inputBlock: {
     width: '100%',
+    marginBottom: 24,
   },
   inputLabel: {
     fontSize: 13,
     fontWeight: '600',
     color: '#cbd5f5',
     marginBottom: 8,
+    marginLeft: 4,
   },
   input: {
     width: '100%',
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.45)',
-    backgroundColor: 'rgba(15, 23, 42, 0.6)',
+    borderColor: 'rgba(148, 163, 184, 0.3)',
+    backgroundColor: 'rgba(15, 23, 42, 0.4)',
     color: '#ffffff',
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingVertical: 16,
     fontSize: 16,
   },
   primaryButton: {
     width: '100%',
-    borderRadius: 18,
-    marginTop: 24,
+    borderRadius: 16,
     overflow: 'hidden',
   },
   primaryButtonPressed: {
-    transform: [{ scale: 0.99 }],
+    transform: [{ scale: 0.98 }],
+    opacity: 0.9,
   },
   primaryGradient: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 14,
+    paddingVertical: 16,
     paddingHorizontal: 16,
   },
   primaryLabel: {
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',
+    letterSpacing: 0.5,
   },
   disabled: {
-    opacity: 0.6,
+    opacity: 0.5,
   },
   legalText: {
-    marginTop: 36,
+    marginTop: 32,
     fontSize: 12,
     color: '#64748b',
     textAlign: 'center',
     lineHeight: 18,
+    maxWidth: 300,
   },
   legalLink: {
     color: '#60a5fa',

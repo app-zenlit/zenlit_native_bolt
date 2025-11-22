@@ -21,12 +21,7 @@ import { determinePostAuthRoute } from '../src/utils/authNavigation';
 const RootLayout: React.FC = () => {
   const pathname = usePathname();
   const router = useRouter();
-  const normalizedPath = pathname ?? '/';
-  const isAuthRoute = normalizedPath.startsWith('/auth');
-  const isOnboardingRoute = normalizedPath.startsWith('/onboarding');
-  const isGetStartedRoute = normalizedPath === '/' || normalizedPath.length === 0;
-  const isPreauthRoute = isAuthRoute || isOnboardingRoute;
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isReady, setIsReady] = useState(false);
   const [fontsLoaded] = useFonts({ Inter_500Medium });
 
   useEffect(() => {
@@ -39,79 +34,65 @@ const RootLayout: React.FC = () => {
   }, [pathname]);
 
   useEffect(() => {
-    logger.info('App', 'RootLayout mounted', { supabaseReady });
-
-    const handleAuthError = async () => {
+    const initializeApp = async () => {
       try {
         if (!supabaseReady) {
-          logger.warn('App', 'Supabase not ready, skipping session check');
-          return;
+          logger.warn('App', 'Supabase not ready, waiting...');
+          // In a real app we might want to wait or show an error, 
+          // but for now we'll proceed to let the UI handle it or retry.
         }
 
-        const { data: { session }, error } = await supabase.auth.getSession();
-        setIsAuthenticated(!!session);
-        logger.info('Auth', 'Initial session check complete', { hasSession: !!session });
-      } catch (err) {
-        logger.error('Auth', 'Error checking session:', err);
+        const { data: { session } } = await supabase.auth.getSession();
+
+        if (session?.user) {
+          // User is authenticated, determine where they should go
+          const targetRoute = await determinePostAuthRoute({ userId: session.user.id });
+          if (targetRoute) {
+            logger.info('App', 'Redirecting initial load', { targetRoute });
+            router.replace(targetRoute);
+          }
+        }
+      } catch (e) {
+        logger.error('App', 'Initialization error', e);
+      } finally {
+        setIsReady(true);
       }
     };
 
-    handleAuthError();
-  }, []);
+    if (fontsLoaded) {
+      initializeApp();
+    }
+  }, [fontsLoaded]);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event: AuthChangeEvent, session: Session | null) => {
-        setIsAuthenticated(!!session);
+      async (event: AuthChangeEvent, session: Session | null) => {
+        if (event === 'SIGNED_OUT') {
+          router.replace('/auth');
+        } else if (event === 'SIGNED_IN' && session) {
+          // When signing in (e.g. from a deep link or just a state change), 
+          // we might want to re-evaluate routing if we are on a public screen
+          const current = pathname ?? '/';
+          if (current === '/' || current.startsWith('/auth')) {
+            const targetRoute = await determinePostAuthRoute({ userId: session.user.id });
+            if (targetRoute) router.replace(targetRoute);
+          }
+        }
       }
     );
     return () => {
       subscription.unsubscribe();
     };
-  }, []);
+  }, [pathname]);
 
-  useEffect(() => {
-    if (!supabaseReady || !isAuthenticated) {
-      return;
-    }
-
-    if (!isAuthRoute && !isGetStartedRoute) {
-      return;
-    }
-
-    let cancelled = false;
-
-    const redirectIfNeeded = async () => {
-      try {
-        const targetRoute = await determinePostAuthRoute();
-        if (!targetRoute || cancelled) {
-          return;
-        }
-        if (targetRoute !== normalizedPath) {
-          logger.info('Auth', 'Redirecting authenticated user based on profile state', {
-            targetRoute,
-            currentPath: normalizedPath,
-          });
-          router.replace(targetRoute);
-        }
-      } catch (error) {
-        logger.error('Auth', 'Redirect evaluation failed', error);
-      }
-    };
-
-    redirectIfNeeded();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [isAuthenticated, isGetStartedRoute, isAuthRoute, normalizedPath, router, supabaseReady]);
-
-  if (!fontsLoaded) {
-    // Avoid rendering before fonts load to ensure consistent typography
-    return null;
+  if (!fontsLoaded || !isReady) {
+    return null; // Or a splash screen component
   }
 
-  const shouldShowNav = isAuthenticated && !isPreauthRoute && !isGetStartedRoute;
+  // Simple check for showing nav: only show if we are NOT in auth/onboarding/root
+  // This is a visual helper, actual protection is done by RLS and logic above
+  const isPublicRoute = (pathname === '/' || pathname?.startsWith('/auth') || pathname?.startsWith('/onboarding'));
+  const shouldShowNav = !isPublicRoute;
 
   return (
     <SafeAreaProvider>
@@ -123,10 +104,12 @@ const RootLayout: React.FC = () => {
               screenOptions={{
                 headerShown: false,
                 contentStyle: { backgroundColor: theme.colors.background },
+                animation: 'fade', // Smooth transitions
               }}
             >
-              {/** Ensure Get Started (index) is fully immersive: no header */}
               <Stack.Screen name="index" options={{ headerShown: false }} />
+              <Stack.Screen name="auth" options={{ headerShown: false }} />
+              <Stack.Screen name="onboarding" options={{ headerShown: false }} />
             </Stack>
             {shouldShowNav ? <Navigation /> : null}
           </View>

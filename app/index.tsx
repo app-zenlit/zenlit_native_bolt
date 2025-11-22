@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
+  BackHandler,
   Platform,
   Pressable,
   StyleSheet,
@@ -33,7 +34,6 @@ const GetStartedScreen: React.FC = () => {
   const containerScale = useRef(new Animated.Value(1)).current;
   const containerTranslate = useRef(new Animated.Value(0)).current;
   const containerOpacity = useRef(new Animated.Value(1)).current;
-  const navTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     containerScale.setValue(1);
@@ -67,16 +67,6 @@ const GetStartedScreen: React.FC = () => {
       containerScale.setValue(1);
       containerTranslate.setValue(0);
       containerOpacity.setValue(1);
-      if (navTimeoutRef.current) {
-        clearTimeout(navTimeoutRef.current);
-        navTimeoutRef.current = null;
-      }
-      return () => {
-        if (navTimeoutRef.current) {
-          clearTimeout(navTimeoutRef.current);
-          navTimeoutRef.current = null;
-        }
-      };
     }, [containerOpacity, containerScale, containerTranslate])
   );
 
@@ -88,9 +78,10 @@ const GetStartedScreen: React.FC = () => {
     setIsNavigating(true);
     runContainerAnimation(true);
 
-    navTimeoutRef.current = setTimeout(() => {
-      router.replace('/auth');
-    }, 420);
+    // Small delay for animation to start
+    setTimeout(() => {
+      router.push('/auth');
+    }, 300);
   }, [isNavigating, router, runContainerAnimation]);
 
   return (
@@ -104,7 +95,10 @@ const GetStartedScreen: React.FC = () => {
           },
         ]}
       >
-        <GradientTitle text="Zenlit" style={styles.title} numberOfLines={1} />
+        <View style={styles.titleWrapper}>
+          <GradientTitle text="Zenlit" style={styles.title} numberOfLines={1} />
+          <Text style={styles.subtitle}>Connect with your world.</Text>
+        </View>
 
         <Pressable
           accessibilityRole="button"
@@ -128,8 +122,6 @@ const GetStartedScreen: React.FC = () => {
             )}
           </LinearGradient>
         </Pressable>
-
-        {/** Removed the secondary sign-in link to declutter the Get Started page */}
       </Animated.View>
     </View>
   );
@@ -145,32 +137,47 @@ const styles = StyleSheet.create({
   },
   content: {
     alignItems: 'center',
+    width: '100%',
+    maxWidth: 400,
+  },
+  titleWrapper: {
+    alignItems: 'center',
+    marginBottom: 64,
   },
   title: {
-    fontSize: 64,
-    fontWeight: '600',
-    letterSpacing: -1,
+    fontSize: 72,
+    fontWeight: '700',
+    letterSpacing: -2,
     textAlign: 'center',
     color: '#ffffff',
-    marginBottom: 48,
+    marginBottom: 16,
+  },
+  subtitle: {
+    fontSize: 18,
+    color: '#94a3b8',
+    textAlign: 'center',
+    letterSpacing: -0.5,
   },
   buttonWrapper: {
-    borderRadius: 16,
+    width: '100%',
+    borderRadius: 20,
     overflow: 'hidden',
     ...BUTTON_ELEVATION,
   },
   buttonPressed: {
     transform: [{ scale: 0.98 }],
+    opacity: 0.9,
   },
   button: {
-    paddingHorizontal: 40,
-    paddingVertical: 16,
+    paddingVertical: 18,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   buttonLabel: {
     color: '#ffffff',
     fontSize: 18,
     fontWeight: '600',
+    letterSpacing: 0.5,
   },
   loadingRow: {
     flexDirection: 'row',
@@ -178,14 +185,6 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     marginLeft: 8,
-  },
-  secondaryLink: {
-    marginTop: 28,
-  },
-  secondaryText: {
-    color: '#60a5fa',
-    fontSize: 15,
-    fontWeight: '600',
   },
 });
 
