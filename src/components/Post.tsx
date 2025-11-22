@@ -274,7 +274,7 @@ export const Post: React.FC<PostProps> = ({
             onPress: () => setConfirmOpen(true),
           },
         ]}
-        // Anchored relative positioning handled inside component
+      // Anchored relative positioning handled inside component
       />
 
       <ConfirmDialog

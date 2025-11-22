@@ -129,6 +129,16 @@ export const FeedList: React.FC<FeedListProps> = ({ refreshSignal }) => {
     );
   }
 
+  if (posts.length === 0) {
+    return (
+      <AnimatedStatusView
+        title="No posts nearby"
+        subtitle="Be the first to post"
+        icon="file-text"
+      />
+    );
+  }
+
   return (
     <View style={styles.container}>
       <FlatList
@@ -138,16 +148,9 @@ export const FeedList: React.FC<FeedListProps> = ({ refreshSignal }) => {
           <Post post={convertPostToFeedFormat(item)} selectedAccounts={selectedAccounts} showTimestamp={false} />
         )}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.content, { flexGrow: 1 }]}
+        contentContainerStyle={styles.content}
         onRefresh={loadPosts}
         refreshing={loading}
-        ListEmptyComponent={
-          <AnimatedStatusView
-            title="No posts nearby"
-            subtitle="Be the first to post"
-            icon="file-text"
-          />
-        }
       />
     </View>
   );
